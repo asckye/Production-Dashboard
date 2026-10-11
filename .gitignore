@@ -1,0 +1,66 @@
+# Build outputs
+bin/
+obj/
+out/
+publish/
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# IDE
+.vs/
+.vscode/
+.idea/
+*.DotSettings.user
+
+# Tool caches
+.dotnet/
+.nuget/
+artifacts/
+
+# Test results
+TestResults/
+*.coverage
+*.coveragexml
+coverage.*.xml
+coverage.json
+
+
+# Logs (runtime)
+logs/
+*.log
+
+# Watchdog heartbeat (runtime)
+runtime/
+
+# Runtime data when running from the repo root (DB / theme.json / Excel exports).
+# Leading slash anchors it to the root, so src/**/Data/ source folders stay tracked.
+/Data/
+
+# Local SQLite databases (runtime) — only the binaries themselves;
+# do NOT ignore source folders named "Data" (e.g. src/**/Data/*.cs)
+*.db
+*.db-shm
+*.db-wal
+# Runtime Data/ + Backups/ live under bin/, already excluded above.
+# Match them anywhere only via their .db extensions to avoid catching source dirs.
+
+# OS
+Thumbs.db
+.DS_Store
+ehthumbs.db
+desktop.ini
+
+# Local settings
+appsettings.Local.json
+secrets.json
+*.local.json
+
+# Publish artifacts
+# 注意: PublishProfiles/*.pubxml 属于项目配置,必须提交;
+# 只忽略 VS 自动生成的本地覆盖 *.pubxml.user 即可。
+*.pubxml.user
+
+# Temp git commit message
+.git_commit_msg.txt

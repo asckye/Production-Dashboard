@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- 跟主项目对齐到 net10.0-windows,否则无法引用 WPF 程序集 -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <RootNamespace>ProductionDashboard.Tests</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" />
+    <PackageReference Include="FluentAssertions" />
+    <PackageReference Include="Microsoft.Extensions.Options" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" />
+    <PackageReference Include="xunit" />
+    <PackageReference Include="xunit.runner.visualstudio" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\ProductionDashboard.Core\ProductionDashboard.Core.csproj" />
+    <ProjectReference Include="..\..\src\ProductionDashboard.Infrastructure\ProductionDashboard.Infrastructure.csproj" />
+    <ProjectReference Include="..\..\src\ProductionDashboard\ProductionDashboard.csproj" />
+  </ItemGroup>
+
+</Project>

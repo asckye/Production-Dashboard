@@ -1,0 +1,81 @@
+<Window
+    x:Class="ProductionDashboard.Views.LoginWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="班长登录"
+    Width="440"
+    MinHeight="320"
+    SizeToContent="Height"
+    WindowStartupLocation="CenterOwner"
+    WindowStyle="None"
+    ResizeMode="NoResize"
+    AllowsTransparency="True"
+    Background="Transparent"
+    FontFamily="{StaticResource Font.Primary}">
+    <Border Padding="32,28" Style="{StaticResource Style.Card}">
+        <StackPanel>
+            <TextBlock
+                Text="班长登录"
+                HorizontalAlignment="Center"
+                Style="{StaticResource Text.Heading}" />
+            <TextBlock
+                Text="登录后可执行倒班切换 / 班组管理"
+                Margin="0,10,0,22"
+                HorizontalAlignment="Center"
+                Style="{StaticResource Text.Body}" />
+
+            <TextBlock
+                Text="操作员姓名"
+                Margin="0,0,0,6"
+                Style="{StaticResource Text.CardLabel}" />
+            <TextBox x:Name="OperatorBox"
+                Padding="12,10"
+                FontSize="{StaticResource FontSize.BodyLg}"
+                Background="{DynamicResource Brush.Bg3}"
+                Foreground="{DynamicResource Brush.Text0}"
+                BorderBrush="{DynamicResource Brush.Line}"
+                BorderThickness="1"
+                CaretBrush="{DynamicResource Brush.Brand}"
+                KeyDown="OnAnyKeyDown" />
+
+            <TextBlock
+                Text="班长口令"
+                Margin="0,16,0,6"
+                Style="{StaticResource Text.CardLabel}" />
+            <PasswordBox x:Name="PwdBox"
+                Padding="12,10"
+                FontSize="{StaticResource FontSize.BodyLg}"
+                Background="{DynamicResource Brush.Bg3}"
+                Foreground="{DynamicResource Brush.Text0}"
+                BorderBrush="{DynamicResource Brush.Line}"
+                BorderThickness="1"
+                CaretBrush="{DynamicResource Brush.Brand}"
+                KeyDown="OnAnyKeyDown" />
+
+            <TextBlock x:Name="ErrorText"
+                Margin="0,10,0,0"
+                HorizontalAlignment="Center"
+                Style="{StaticResource Text.Caption}"
+                Foreground="{DynamicResource Brush.Danger}"
+                Visibility="Collapsed" />
+
+            <StackPanel
+                Margin="0,24,0,0"
+                HorizontalAlignment="Right"
+                Orientation="Horizontal">
+                <Button
+                    Content="取消"
+                    MinWidth="110"
+                    Margin="0,0,12,0"
+                    Click="OnCancel"
+                    Style="{StaticResource Style.Button.Secondary}" />
+                <Button
+                    Content="登录"
+                    MinWidth="140"
+                    Click="OnConfirm"
+                    IsDefault="True"
+                    Style="{StaticResource Style.Button.Primary}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

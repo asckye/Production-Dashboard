@@ -1,0 +1,231 @@
+<!--
+  数据展示控件样式 — ProgressBar(通用 / Hero / A班 / B班 / 累计细条)+
+  Metric pill(Hero 底部指标方格)+ ShiftPanel(A/B 班并排卡外壳)+
+  ShiftLetter(A/B 大字母徽章)。
+-->
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!-- ProgressBar · 大屏专用:渐变填充 + 端点发光 + 圆头。
+         每张卡可在用法上换颜色,默认走 Brand → Success -->
+    <Style x:Key="Style.ProgressBar.Pro" TargetType="ProgressBar">
+        <!-- 轨道色走主题 token:浅色用灰蓝、深色用近 Line 色,保证两种主题都清晰可见 -->
+        <Setter Property="Background" Value="{DynamicResource Brush.Track}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="MinHeight" Value="0" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Maximum" Value="100" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                        <Grid>
+                            <Border x:Name="PART_Track" />
+                            <Border x:Name="PART_Indicator"
+                                HorizontalAlignment="Left"
+                                CornerRadius="4">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Offset="0" Color="{DynamicResource Color.Brand}" />
+                                        <GradientStop Offset="1" Color="{DynamicResource Color.Success}" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.Effect>
+                                    <DropShadowEffect
+                                        BlurRadius="12"
+                                        ShadowDepth="0"
+                                        Opacity="0.6"
+                                        Color="{DynamicResource Color.Brand}" />
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- Hero 主卡片用更大的进度条 -->
+    <Style
+        x:Key="Style.ProgressBar.Hero"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource Style.ProgressBar.Pro}">
+        <Setter Property="Height" Value="12" />
+    </Style>
+
+    <!-- Metric pill · Hero 卡片底部 4 个小指标方格 -->
+    <Style x:Key="Style.Metric" TargetType="Border">
+        <Setter Property="Background" Value="#06FFFFFF" />
+        <Setter Property="CornerRadius" Value="{StaticResource Radius.Sm}" />
+        <Setter Property="Padding" Value="14,10,14,10" />
+        <Setter Property="BorderThickness" Value="3,0,0,0" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Brand}" />
+    </Style>
+
+    <!-- ProgressBar - A班 (橙) / B班 (蓝) 专属配色 -->
+    <Style
+        x:Key="Style.ProgressBar.ShiftA"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource Style.ProgressBar.Pro}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                        <Grid>
+                            <Border x:Name="PART_Track" />
+                            <Border x:Name="PART_Indicator"
+                                HorizontalAlignment="Left"
+                                CornerRadius="4">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Offset="0" Color="{DynamicResource Color.ShiftA}" />
+                                        <GradientStop Offset="1" Color="{DynamicResource Color.ShiftA2}" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.Effect>
+                                    <DropShadowEffect
+                                        BlurRadius="10"
+                                        ShadowDepth="0"
+                                        Opacity="0.6"
+                                        Color="{DynamicResource Color.ShiftA}" />
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style
+        x:Key="Style.ProgressBar.ShiftB"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource Style.ProgressBar.Pro}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ProgressBar">
+                    <Border Background="{TemplateBinding Background}" CornerRadius="4">
+                        <Grid>
+                            <Border x:Name="PART_Track" />
+                            <Border x:Name="PART_Indicator"
+                                HorizontalAlignment="Left"
+                                CornerRadius="4">
+                                <Border.Background>
+                                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,0">
+                                        <GradientStop Offset="0" Color="{DynamicResource Color.ShiftB}" />
+                                        <GradientStop Offset="1" Color="{DynamicResource Color.ShiftB2}" />
+                                    </LinearGradientBrush>
+                                </Border.Background>
+                                <Border.Effect>
+                                    <DropShadowEffect
+                                        BlurRadius="10"
+                                        ShadowDepth="0"
+                                        Opacity="0.6"
+                                        Color="{DynamicResource Color.ShiftB}" />
+                                </Border.Effect>
+                            </Border>
+                        </Grid>
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 累计对比的细 bar (Height=9) -->
+    <Style
+        x:Key="Style.ProgressBar.ShiftA.Slim"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource Style.ProgressBar.ShiftA}">
+        <Setter Property="Height" Value="9" />
+    </Style>
+    <Style
+        x:Key="Style.ProgressBar.ShiftB.Slim"
+        TargetType="ProgressBar"
+        BasedOn="{StaticResource Style.ProgressBar.ShiftB}">
+        <Setter Property="Height" Value="9" />
+    </Style>
+
+    <!-- ShiftPanel - A 班 / B 班 并排卡的外壳。
+         A/B 班外壳:默认走 Idle 灰色外观,当各自的 IsActive=True 时切到本色高亮。
+         这样夜班(B 班)生效时,橙色高亮会自动跳到 B 卡片,A 卡片落到灰色 Idle。 -->
+    <Style x:Key="Style.ShiftPanel.A" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource Radius.Md}" />
+        <Setter Property="Padding" Value="18,14" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+        <Setter Property="Background" Value="#04FFFFFF" />
+        <Setter Property="Opacity" Value="0.75" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding AIsActive}" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftA}" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Offset="0">
+                                <GradientStop.Color>
+                                    <Color A="26" R="255" G="140" B="66" />
+                                </GradientStop.Color>
+                            </GradientStop>
+                            <GradientStop Offset="1">
+                                <GradientStop.Color>
+                                    <Color A="8" R="255" G="140" B="66" />
+                                </GradientStop.Color>
+                            </GradientStop>
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Opacity" Value="1" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="Style.ShiftPanel.B" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource Radius.Md}" />
+        <Setter Property="Padding" Value="18,14" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+        <Setter Property="Background" Value="#04FFFFFF" />
+        <Setter Property="Opacity" Value="0.75" />
+        <Style.Triggers>
+            <DataTrigger Binding="{Binding BIsActive}" Value="True">
+                <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftB}" />
+                <Setter Property="Background">
+                    <Setter.Value>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                            <GradientStop Offset="0">
+                                <GradientStop.Color>
+                                    <Color A="26" R="74" G="158" B="255" />
+                                </GradientStop.Color>
+                            </GradientStop>
+                            <GradientStop Offset="1">
+                                <GradientStop.Color>
+                                    <Color A="8" R="74" G="158" B="255" />
+                                </GradientStop.Color>
+                            </GradientStop>
+                        </LinearGradientBrush>
+                    </Setter.Value>
+                </Setter>
+                <Setter Property="Opacity" Value="1" />
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- "未开始 / 已结束" 班次面板:虚线边 + 不发光 -->
+    <Style x:Key="Style.ShiftPanel.Idle" TargetType="Border">
+        <Setter Property="CornerRadius" Value="{StaticResource Radius.Md}" />
+        <Setter Property="Padding" Value="18,14" />
+        <Setter Property="BorderThickness" Value="2" />
+        <Setter Property="BorderBrush" Value="{DynamicResource Brush.Line}" />
+        <Setter Property="Background" Value="#04FFFFFF" />
+        <Setter Property="Opacity" Value="0.75" />
+    </Style>
+
+    <!-- A / B 大字母徽章 -->
+    <Style x:Key="Style.ShiftLetter" TargetType="Border">
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
+        <Setter Property="CornerRadius" Value="{StaticResource Radius.Sm}" />
+    </Style>
+
+</ResourceDictionary>

@@ -1,0 +1,62 @@
+# EditorConfig is awesome: https://EditorConfig.org
+# 项目根 .editorconfig
+#
+# 渐进式启用策略:
+#   先只配最基础的格式化规则,确保现有代码 0 warning。
+#   IDE0005 / IDE0051 / CA1822 等更激进的规则等独立 Step 在确认现存
+#   warning 数量后再分批开启,避免一次性大范围破坏现有代码。
+
+root = true
+
+# ── 所有文件的基线 ──────────────────────────────────────────────────
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+indent_style = space
+
+# ── C# / .NET ──────────────────────────────────────────────────────
+[*.{cs,csproj,props,targets}]
+indent_size = 4
+
+# using 排序与归并 — 这条目前代码已合规,可以直接启用
+dotnet_sort_system_directives_first = true
+dotnet_separate_import_directive_groups = false
+csharp_using_directive_placement = outside_namespace:silent
+
+# 命名空间使用 file-scoped(.NET 6+ 风格) — 当前代码已采用
+csharp_style_namespace_declarations = file_scoped:silent
+
+# var 偏好(不强制,只是建议)
+csharp_style_var_for_built_in_types = true:silent
+csharp_style_var_when_type_is_apparent = true:silent
+
+# Expression-bodied — 不强制
+csharp_style_expression_bodied_methods = when_on_single_line:silent
+csharp_style_expression_bodied_properties = when_on_single_line:silent
+
+# 括号偏好
+csharp_prefer_braces = true:silent
+
+# 大括号换行(Allman 风格,跟现有代码一致)
+csharp_new_line_before_open_brace = all
+csharp_new_line_before_else = true
+csharp_new_line_before_catch = true
+csharp_new_line_before_finally = true
+
+# ── XAML ────────────────────────────────────────────────────────────
+[*.{xaml,xml}]
+indent_size = 2
+
+# ── JSON / YAML ────────────────────────────────────────────────────
+[*.{json,yml,yaml}]
+indent_size = 2
+
+# ── Markdown ───────────────────────────────────────────────────────
+[*.md]
+trim_trailing_whitespace = false  # markdown 尾部双空格 = 软换行
+
+# ── PowerShell / Shell ─────────────────────────────────────────────
+[*.{ps1,sh}]
+indent_size = 4

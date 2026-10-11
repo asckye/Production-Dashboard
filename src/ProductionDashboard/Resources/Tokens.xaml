@@ -1,0 +1,46 @@
+<!--
+    设计 token (非主题相关的部分):字号 / 字体 / 圆角 / 间距。
+    颜色和 Brush 已拆到 Themes/Dark.xaml 和 Themes/Light.xaml,
+    由 ThemeService 在运行时切换。
+-->
+<ResourceDictionary
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!--   字号 token                                                    -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <sys:Double x:Key="FontSize.Display">128</sys:Double>
+    <sys:Double x:Key="FontSize.H1">64</sys:Double>
+    <sys:Double x:Key="FontSize.H2">40</sys:Double>
+    <sys:Double x:Key="FontSize.H3">26</sys:Double>
+    <sys:Double x:Key="FontSize.H4">20</sys:Double>
+    <sys:Double x:Key="FontSize.Body">14</sys:Double>
+    <sys:Double x:Key="FontSize.BodyLg">16</sys:Double>
+    <sys:Double x:Key="FontSize.BodySm">12</sys:Double>
+    <sys:Double x:Key="FontSize.Caption">11</sys:Double>
+    <sys:Double x:Key="FontSize.Micro">10</sys:Double>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!--   字体族 (优先 Inter,后备中文字体)                              -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <FontFamily x:Key="Font.Primary">Inter, Segoe UI, Microsoft YaHei, PingFang SC</FontFamily>
+    <FontFamily x:Key="Font.Mono">Cascadia Code, Consolas, Courier New</FontFamily>
+
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+    <!--   圆角 / 间距                                                   -->
+    <!-- ═══════════════════════════════════════════════════════════════ -->
+
+    <CornerRadius x:Key="Radius.Sm">8</CornerRadius>
+    <CornerRadius x:Key="Radius.Md">12</CornerRadius>
+    <CornerRadius x:Key="Radius.Lg">14</CornerRadius>
+    <CornerRadius x:Key="Radius.Xl">16</CornerRadius>
+    <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
+
+    <Thickness x:Key="Space.Card">22,18,22,18</Thickness>
+    <Thickness x:Key="Space.CardLg">26,22,26,22</Thickness>
+
+</ResourceDictionary>

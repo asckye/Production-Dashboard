@@ -1,0 +1,53 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <UseWPF>true</UseWPF>
+    <RootNamespace>ProductionDashboard</RootNamespace>
+    <AssemblyName>ProductionDashboard</AssemblyName>
+    <!-- 用我们自己的 Program.Main,不要 App.g.cs 自动生成的 Main(看门狗模式需要) -->
+    <StartupObject>ProductionDashboard.Program</StartupObject>
+    <!-- dotnet run 默认以当前 shell 目录为工作目录,而 appsettings.json / Data/ 都按工作目录解析;
+         固定到输出目录,与 VS F5 和发布后双击 exe 的行为一致 -->
+    <RunWorkingDirectory>bin\$(Configuration)\$(TargetFramework)\</RunWorkingDirectory>
+
+    <!-- 版本号,用于心跳 / watchdog 日志 / 文件属性 -->
+    <Version>1.1.0.0</Version>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
+    <Product>生产统计大屏</Product>
+    <Company>ProductionDashboard</Company>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- App.xaml 改为 Page,App.g.cs 仍会生成 partial App,但不生成 Main 入口 -->
+    <ApplicationDefinition Remove="App.xaml" />
+    <Page Include="App.xaml" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" />
+    <PackageReference Include="Microsoft.Extensions.Hosting" />
+    <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" />
+    <PackageReference Include="Microsoft.Extensions.Options.DataAnnotations" />
+    <PackageReference Include="Serilog.Extensions.Hosting" />
+    <PackageReference Include="Serilog.Settings.Configuration" />
+    <PackageReference Include="Serilog.Sinks.Console" />
+    <PackageReference Include="Serilog.Sinks.File" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\ProductionDashboard.Core\ProductionDashboard.Core.csproj" />
+    <ProjectReference Include="..\ProductionDashboard.Infrastructure\ProductionDashboard.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>

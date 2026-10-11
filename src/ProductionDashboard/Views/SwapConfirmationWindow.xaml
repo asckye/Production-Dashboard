@@ -1,0 +1,59 @@
+<Window
+    x:Class="ProductionDashboard.Views.SwapConfirmationWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="倒班确认"
+    Width="540"
+    MinHeight="280"
+    SizeToContent="Height"
+    WindowStartupLocation="CenterOwner"
+    WindowStyle="None"
+    ResizeMode="NoResize"
+    AllowsTransparency="True"
+    Background="Transparent"
+    FontFamily="{StaticResource Font.Primary}">
+    <Border Padding="32,28" Style="{StaticResource Style.Card}">
+        <StackPanel>
+            <TextBlock
+                Text="倒班切换确认"
+                HorizontalAlignment="Center"
+                Style="{StaticResource Text.Heading}" />
+            <TextBlock
+                Text="对调后,各班组的累计生产数据继续跟随各自班组累加。"
+                Margin="0,10,0,18"
+                HorizontalAlignment="Center"
+                Style="{StaticResource Text.Body}" />
+
+            <Border Padding="16,12" Background="{DynamicResource Brush.Bg3}" CornerRadius="6">
+                <StackPanel>
+                    <TextBlock Text="当前 →" Style="{StaticResource Text.CardLabel}" Margin="0,0,0,6" />
+                    <TextBlock x:Name="BeforeText" Style="{StaticResource Text.Body}"
+                        FontSize="{StaticResource FontSize.BodyLg}" />
+                    <Border Height="1" Background="{DynamicResource Brush.Line}" Margin="0,10" />
+                    <TextBlock Text="对调后 →" Style="{StaticResource Text.CardLabel}" Margin="0,0,0,6" />
+                    <TextBlock x:Name="AfterText" Style="{StaticResource Text.Body}"
+                        FontSize="{StaticResource FontSize.BodyLg}"
+                        Foreground="{DynamicResource Brush.Brand}" />
+                </StackPanel>
+            </Border>
+
+            <StackPanel
+                Margin="0,24,0,0"
+                HorizontalAlignment="Right"
+                Orientation="Horizontal">
+                <Button
+                    Content="取消"
+                    MinWidth="120"
+                    Margin="0,0,12,0"
+                    Click="OnCancel"
+                    Style="{StaticResource Style.Button.Secondary}" />
+                <Button
+                    Content="确认对调"
+                    MinWidth="160"
+                    Click="OnConfirm"
+                    IsDefault="True"
+                    Style="{StaticResource Style.Button.Primary}" />
+            </StackPanel>
+        </StackPanel>
+    </Border>
+</Window>

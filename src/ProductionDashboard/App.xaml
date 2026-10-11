@@ -1,0 +1,23 @@
+<Application
+    x:Class="ProductionDashboard.App"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:local="clr-namespace:ProductionDashboard"
+    xmlns:conv="clr-namespace:ProductionDashboard.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <ResourceDictionary.MergedDictionaries>
+                <!--
+                    主题字典 - 启动期默认深色 (与已往一致),运行时由 ThemeService 替换。
+                    保持在 Tokens 之前合并,这样 Themes 内的 Color/Brush 可被后续 dict 引用。
+                -->
+                <ResourceDictionary Source="/Resources/Themes/Dark.xaml" />
+                <ResourceDictionary Source="/Resources/Tokens.xaml" />
+                <ResourceDictionary Source="/Resources/Styles/_index.xaml" />
+            </ResourceDictionary.MergedDictionaries>
+            <conv:BoolToVisibilityConverter x:Key="BoolToVisibilityConverter" />
+            <conv:DateOnlyConverter x:Key="DateOnlyConverter" />
+            <conv:PercentToPixelConverter x:Key="PercentToPixelConverter" />
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

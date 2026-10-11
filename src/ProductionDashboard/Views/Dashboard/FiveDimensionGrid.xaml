@@ -1,0 +1,467 @@
+<!--
+  Dashboard 主视图的「5 维度大数字卡」容器(本小时 / 今日 / 本周 / 本月 / 本年)。
+  每张卡都是同一布局,只是配色(Color.Hour/Day/Week/Month/Year)和绑定路径不同。
+  绑定走 Metrics.* 路径(对应 AggregateMetricsPresenter)。
+-->
+<UserControl x:Class="ProductionDashboard.Views.Dashboard.FiveDimensionGrid"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ctrl="clr-namespace:ProductionDashboard.Controls"
+             mc:Ignorable="d"
+             FontFamily="{StaticResource Font.Primary}"
+             TextOptions.TextFormattingMode="Ideal">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="14" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
+
+        <!-- 本小时 -->
+        <Border Grid.Column="0" Style="{StaticResource Style.Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <StackPanel Grid.Row="0" Orientation="Horizontal">
+                    <TextBlock Style="{StaticResource Text.CardLabel}" Text="本小时产量" />
+                    <!-- 本小时 LIVE · Height=16 + CornerRadius=8 -->
+                    <Border Height="16" CornerRadius="8"
+                            Margin="10,0,0,0" Padding="6,0"
+                            VerticalAlignment="Center">
+                        <Border.Background>
+                            <SolidColorBrush Color="{DynamicResource Color.Success}" Opacity="0.1" />
+                        </Border.Background>
+                        <TextBlock Text="LIVE" VerticalAlignment="Center"
+                                   FontSize="9" FontWeight="Bold"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Border>
+                </StackPanel>
+                <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,8,0,0"
+                                       Value="{Binding Metrics.HourCount}"
+                                       Unit="件"
+                                       NumberFontSize="60"
+                                       UnitFontSize="16"
+                                       AccentColor="{DynamicResource Color.Hour}" />
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.HourTargetText}" />
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Hour}"
+                               Text="{Binding Metrics.HourPercentText}" />
+                </Grid>
+                <ProgressBar Grid.Row="3" Style="{StaticResource Style.ProgressBar.Pro}"
+                             Margin="0,6,0,0" Value="{Binding Metrics.HourPercent}" />
+                <!-- mini 柱图 -->
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="近 6 小时" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.HourTrend}"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Metrics.HourMini}" Height="56">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" VerticalAlignment="Bottom"
+                                            CornerRadius="2,2,0,0"
+                                            Height="{Binding Height}">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{DynamicResource Color.Hour}" Offset="0" />
+                                                <GradientStop Color="#22000000" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{DynamicResource Color.Hour}"
+                                                                                  BlurRadius="8" ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                    <TextBlock Grid.Row="1" Text="{Binding Label}"
+                                               HorizontalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource Brush.Text2}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 今日 -->
+        <Border Grid.Column="2" Style="{StaticResource Style.Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Style="{StaticResource Text.CardLabel}" Text="今日产量" />
+                <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,8,0,0"
+                                       Value="{Binding Metrics.DayCount}"
+                                       Unit="件"
+                                       NumberFontSize="60"
+                                       UnitFontSize="16"
+                                       AccentColor="{DynamicResource Color.Day}" />
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.DayTargetText}" />
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Day}"
+                               Text="{Binding Metrics.DayPercentText}" />
+                </Grid>
+                <ProgressBar Grid.Row="3" Style="{StaticResource Style.ProgressBar.Pro}"
+                             Margin="0,6,0,0" Value="{Binding Metrics.DayPercent}" />
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="近 7 天" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.DayTrend}"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Metrics.DayMini}" Height="56">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" VerticalAlignment="Bottom"
+                                            CornerRadius="2,2,0,0"
+                                            Height="{Binding Height}">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{DynamicResource Color.Day}" Offset="0" />
+                                                <GradientStop Color="#22000000" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{DynamicResource Color.Day}"
+                                                                                  BlurRadius="8" ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                    <TextBlock Grid.Row="1" Text="{Binding Label}"
+                                               HorizontalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource Brush.Text2}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 本周 -->
+        <Border Grid.Column="4" Style="{StaticResource Style.Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Style="{StaticResource Text.CardLabel}" Text="本周产量" />
+                <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,8,0,0"
+                                       Value="{Binding Metrics.WeekCount}"
+                                       Unit="件"
+                                       NumberFontSize="60"
+                                       UnitFontSize="16"
+                                       AccentColor="{DynamicResource Color.Week}" />
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.WeekTargetText}" />
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Week}"
+                               Text="{Binding Metrics.WeekPercentText}" />
+                </Grid>
+                <ProgressBar Grid.Row="3" Style="{StaticResource Style.ProgressBar.Pro}"
+                             Margin="0,6,0,0" Value="{Binding Metrics.WeekPercent}" />
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="近 6 周" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.WeekTrend}"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Metrics.WeekMini}" Height="56">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" VerticalAlignment="Bottom"
+                                            CornerRadius="2,2,0,0"
+                                            Height="{Binding Height}">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{DynamicResource Color.Week}" Offset="0" />
+                                                <GradientStop Color="#22000000" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{DynamicResource Color.Week}"
+                                                                                  BlurRadius="8" ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                    <TextBlock Grid.Row="1" Text="{Binding Label}"
+                                               HorizontalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource Brush.Text2}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 本月 -->
+        <Border Grid.Column="6" Style="{StaticResource Style.Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Style="{StaticResource Text.CardLabel}" Text="本月产量" />
+                <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,8,0,0"
+                                       Value="{Binding Metrics.MonthCount}"
+                                       Unit="件"
+                                       NumberFontSize="60"
+                                       UnitFontSize="16"
+                                       AccentColor="{DynamicResource Color.Month}" />
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.MonthTargetText}" />
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Month}"
+                               Text="{Binding Metrics.MonthPercentText}" />
+                </Grid>
+                <ProgressBar Grid.Row="3" Style="{StaticResource Style.ProgressBar.Pro}"
+                             Margin="0,6,0,0" Value="{Binding Metrics.MonthPercent}" />
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="近 6 月" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.MonthTrend}"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Metrics.MonthMini}" Height="56">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="2,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" VerticalAlignment="Bottom"
+                                            CornerRadius="2,2,0,0"
+                                            Height="{Binding Height}">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{DynamicResource Color.Month}" Offset="0" />
+                                                <GradientStop Color="#22000000" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{DynamicResource Color.Month}"
+                                                                                  BlurRadius="8" ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                    <TextBlock Grid.Row="1" Text="{Binding Label}"
+                                               HorizontalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource Brush.Text2}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 本年 -->
+        <Border Grid.Column="8" Style="{StaticResource Style.Card}">
+            <Grid>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <TextBlock Grid.Row="0" Style="{StaticResource Text.CardLabel}" Text="本年产量" />
+                <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,8,0,0"
+                                       Value="{Binding Metrics.YearCount}"
+                                       Unit="件"
+                                       NumberFontSize="60"
+                                       UnitFontSize="16"
+                                       AccentColor="{DynamicResource Color.Year}" />
+                <Grid Grid.Row="2" Margin="0,10,0,0">
+                    <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.YearTargetText}" />
+                    <TextBlock HorizontalAlignment="Right"
+                               FontSize="18" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Year}"
+                               Text="{Binding Metrics.YearPercentText}" />
+                </Grid>
+                <ProgressBar Grid.Row="3" Style="{StaticResource Style.ProgressBar.Pro}"
+                             Margin="0,6,0,0" Value="{Binding Metrics.YearPercent}" />
+                <Grid Grid.Row="4" Margin="0,10,0,0">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <Grid Grid.Row="0" Margin="0,0,0,4">
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="近 3 年" />
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="{Binding Metrics.YearTrend}"
+                                   HorizontalAlignment="Right"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </Grid>
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding Metrics.YearMini}" Height="56">
+                        <ItemsControl.ItemsPanel>
+                            <ItemsPanelTemplate><UniformGrid Rows="1" /></ItemsPanelTemplate>
+                        </ItemsControl.ItemsPanel>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="3,0">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="*" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Border Grid.Row="0" VerticalAlignment="Bottom"
+                                            CornerRadius="2,2,0,0"
+                                            Height="{Binding Height}">
+                                        <Border.Background>
+                                            <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                                                <GradientStop Color="{DynamicResource Color.Year}" Offset="0" />
+                                                <GradientStop Color="#22000000" Offset="1" />
+                                            </LinearGradientBrush>
+                                        </Border.Background>
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="Opacity" Value="0.55" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsToday}" Value="True">
+                                                        <Setter Property="Opacity" Value="1" />
+                                                        <Setter Property="Effect">
+                                                            <Setter.Value>
+                                                                <DropShadowEffect Color="{DynamicResource Color.Year}"
+                                                                                  BlurRadius="8" ShadowDepth="0" />
+                                                            </Setter.Value>
+                                                        </Setter>
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Border.Style>
+                                    </Border>
+                                    <TextBlock Grid.Row="1" Text="{Binding Label}"
+                                               HorizontalAlignment="Center" FontSize="9"
+                                               Foreground="{DynamicResource Brush.Text2}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </Grid>
+            </Grid>
+        </Border>
+    </Grid>
+</UserControl>

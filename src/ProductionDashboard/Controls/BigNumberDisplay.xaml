@@ -1,0 +1,34 @@
+<UserControl
+    x:Class="ProductionDashboard.Controls.BigNumberDisplay"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:self="clr-namespace:ProductionDashboard.Controls"
+    FontFamily="{StaticResource Font.Primary}">
+    <StackPanel VerticalAlignment="Bottom" Orientation="Horizontal">
+        <!--
+            关键:不要设 LineHeight (WPF 这里是 DIP 不是 CSS 乘数,设小了字形会
+            溢出 line box 顶端,导致跟上方 label 视觉重叠)。让 TextBlock
+            用字体自身的 line metric;视觉留白通过外层 Margin 调节。
+        -->
+        <TextBlock x:Name="ValueText"
+            Text="{Binding Value, RelativeSource={RelativeSource AncestorType=self:BigNumberDisplay}}"
+            FontSize="{Binding NumberFontSize, RelativeSource={RelativeSource AncestorType=self:BigNumberDisplay}}"
+            FontWeight="Bold"
+            Typography.NumeralAlignment="Tabular"
+            Typography.NumeralStyle="Lining">
+            <TextBlock.Foreground>
+                <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                    <GradientStop Offset="0" Color="{DynamicResource Color.Text0}" />
+                    <GradientStop Offset="1" Color="{Binding AccentColor, RelativeSource={RelativeSource AncestorType=self:BigNumberDisplay}}" />
+                </LinearGradientBrush>
+            </TextBlock.Foreground>
+        </TextBlock>
+        <TextBlock
+            Text="{Binding Unit, RelativeSource={RelativeSource AncestorType=self:BigNumberDisplay}}"
+            Margin="10,0,0,8"
+            VerticalAlignment="Bottom"
+            FontSize="{Binding UnitFontSize, RelativeSource={RelativeSource AncestorType=self:BigNumberDisplay}}"
+            Foreground="{DynamicResource Brush.Text1}"
+            FontWeight="Medium" />
+    </StackPanel>
+</UserControl>

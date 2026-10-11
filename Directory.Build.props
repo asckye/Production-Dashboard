@@ -1,0 +1,24 @@
+<Project>
+
+  <PropertyGroup>
+    <!-- Language & Analyzers -->
+    <LangVersion>latest</LangVersion>
+    <AnalysisLevel>latest</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+
+    <!-- Quality gates -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <WarningsNotAsErrors></WarningsNotAsErrors>
+
+    <!-- Common compile -->
+    <Deterministic>true</Deterministic>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+
+    <!-- Source meta -->
+    <Authors>ProductionDashboard</Authors>
+    <Company>ProductionDashboard</Company>
+    <Product>Production Dashboard</Product>
+    <Copyright>© $([System.DateTime]::UtcNow.Year) ProductionDashboard</Copyright>
+  </PropertyGroup>
+
+</Project>

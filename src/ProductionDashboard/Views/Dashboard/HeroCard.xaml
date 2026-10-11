@@ -1,0 +1,102 @@
+<!--
+  Dashboard 主视图的「当前班次 Hero 卡」UserControl。
+  DataContext 由父视图(DashboardView)继承,绑定走 Hero.* 路径(对应 HeroAndShiftPresenter)。
+-->
+<UserControl x:Class="ProductionDashboard.Views.Dashboard.HeroCard"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             xmlns:ctrl="clr-namespace:ProductionDashboard.Controls"
+             mc:Ignorable="d"
+             FontFamily="{StaticResource Font.Primary}"
+             TextOptions.TextFormattingMode="Ideal">
+    <Border Style="{StaticResource Style.Card}" Padding="26,22">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <!-- 顶部 label + LIVE 标签 -->
+            <StackPanel Grid.Row="0" Orientation="Horizontal">
+                <TextBlock Style="{StaticResource Text.CardLabel}"
+                           Text="当前班次产量" />
+                <!-- Hero LIVE 徽章 · Height=18 + CornerRadius=9 才是真胶囊,不能用 Radius.Pill=999(那会触发椭圆弧) -->
+                <Border Height="18" CornerRadius="9"
+                        Margin="10,0,0,0" Padding="8,0"
+                        VerticalAlignment="Center">
+                    <Border.Background>
+                        <SolidColorBrush Color="{DynamicResource Color.Success}" Opacity="0.1" />
+                    </Border.Background>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Ellipse Width="6" Height="6" Margin="0,0,5,0"
+                                 VerticalAlignment="Center"
+                                 Fill="{DynamicResource Brush.Success}">
+                            <Ellipse.Effect>
+                                <DropShadowEffect Color="{DynamicResource Color.Success}"
+                                                  BlurRadius="6" ShadowDepth="0" />
+                            </Ellipse.Effect>
+                        </Ellipse>
+                        <TextBlock Text="LIVE" VerticalAlignment="Center"
+                                   FontSize="9" FontWeight="Bold"
+                                   Foreground="{DynamicResource Brush.Success}" />
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+
+            <!-- 大数字 -->
+            <ctrl:BigNumberDisplay Grid.Row="1" Margin="0,12,0,0"
+                                   Value="{Binding Hero.HeroCount}"
+                                   Unit="件"
+                                   NumberFontSize="128"
+                                   UnitFontSize="22"
+                                   AccentColor="{DynamicResource Color.ShiftA}" />
+
+            <!-- 占位 spacer (使下方对齐到底) -->
+            <Grid Grid.Row="2" />
+
+            <!-- 目标 + 进度 + 4 指标 -->
+            <StackPanel Grid.Row="3" Margin="0,12,0,0">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Style="{StaticResource Text.Body}" Text="目标 " />
+                        <!-- 数字字号 / 字色完全跟两侧"目标""件"齐平,只靠 Bold + Tabular 给视觉重点和稳定宽度 -->
+                        <TextBlock Style="{StaticResource Text.Body}"
+                                   FontWeight="Bold"
+                                   Typography.NumeralAlignment="Tabular"
+                                   Typography.NumeralStyle="Lining"
+                                   Text="{Binding Hero.HeroTarget}" />
+                        <TextBlock Style="{StaticResource Text.Body}" Text=" 件" />
+                    </StackPanel>
+                    <TextBlock HorizontalAlignment="Right" VerticalAlignment="Center"
+                               FontSize="24" FontWeight="Bold"
+                               Foreground="{DynamicResource Brush.Success}"
+                               Text="{Binding Hero.HeroPercentText}"
+                               Typography.NumeralAlignment="Tabular" />
+                </Grid>
+                <ProgressBar Style="{StaticResource Style.ProgressBar.Hero}"
+                             Margin="0,12,0,0"
+                             Value="{Binding Hero.HeroPercent}" />
+
+                <!-- 只保留当前节拍 metric pill,班次进度 / ETA / 良品率 都删了 -->
+                <Border Style="{StaticResource Style.Metric}" Margin="0,18,0,0"
+                        BorderBrush="{DynamicResource Brush.Success}">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Caption}" Text="当前节拍" />
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Style="{StaticResource Text.Number}"
+                                       FontSize="28"
+                                       Text="{Binding Hero.HeroTakt}" />
+                            <TextBlock Style="{StaticResource Text.Caption}"
+                                       Text=" 件/分" VerticalAlignment="Bottom"
+                                       Margin="6,0,0,5" FontSize="14" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
+        </Grid>
+    </Border>
+</UserControl>

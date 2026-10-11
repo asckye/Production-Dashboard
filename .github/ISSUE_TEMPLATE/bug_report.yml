@@ -1,0 +1,72 @@
+name: 问题报告 / Bug report
+description: 报告缺陷或异常行为 / Report a defect or unexpected behavior
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈!提交前请先搜索是否已有相同 issue。**安全漏洞请勿在此公开提交**,参见 [SECURITY.md](https://github.com/asckye/Production-Dashboard/blob/main/SECURITY.md)。
+        Thanks for reporting! Please search existing issues first. **Do not report security vulnerabilities here**; see [SECURITY.md](https://github.com/asckye/Production-Dashboard/blob/main/SECURITY.md).
+
+  - type: textarea
+    id: description
+    attributes:
+      label: 问题描述 / Description
+      description: 发生了什么? / What happened?
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤 / Steps to reproduce
+      placeholder: |
+        1.
+        2.
+        3.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望行为 / Expected behavior
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: 版本 / Version
+      description: exe 文件属性中的版本号,或 commit SHA / Version from the exe properties, or commit SHA
+      placeholder: 1.1.0.0
+    validations:
+      required: true
+
+  - type: dropdown
+    id: sample-mode
+    attributes:
+      label: PLC 采样模式 / PLC sample mode
+      options:
+        - Edge
+        - Handshake
+        - 不涉及 / Not related
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: 运行环境 / Environment
+      description: Windows 版本、PLC 型号与固件、屏幕分辨率等 / Windows version, PLC model and firmware, screen resolution, etc.
+      placeholder: |
+        Windows 11 23H2
+        S7-1200 CPU 1214C, FW 4.6
+        1920x1080
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / Logs
+      description: 相关的 logs/app-*.log 片段(请先去除 IP、路径等敏感信息) / Relevant excerpt from logs/app-*.log (remove IPs, paths and other sensitive data first)
+      render: text

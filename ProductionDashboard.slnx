@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/ProductionDashboard.Core/ProductionDashboard.Core.csproj" />
+    <Project Path="src/ProductionDashboard.Infrastructure/ProductionDashboard.Infrastructure.csproj" />
+    <Project Path="src/ProductionDashboard/ProductionDashboard.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/ProductionDashboard.Tests/ProductionDashboard.Tests.csproj" />
+  </Folder>
+</Solution>
