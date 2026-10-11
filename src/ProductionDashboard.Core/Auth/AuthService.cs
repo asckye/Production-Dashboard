@@ -200,7 +200,7 @@ public sealed class AuthService : IAuthService, IHostedService, IAsyncDisposable
         _stopped = true;
         if (_idleTimer is not null)
         {
-            await _idleTimer.DisposeAsync();
+            await _idleTimer.DisposeAsync().ConfigureAwait(false);
             _idleTimer = null;
         }
     }

@@ -86,8 +86,8 @@ public sealed class AggregationHostedService : IHostedService, IAsyncDisposable
 
         _shifts.ShiftChanged -= OnShiftChanged;
 
-        if (_minuteTimer is not null) await _minuteTimer.DisposeAsync();
-        if (_summaryTimer is not null) await _summaryTimer.DisposeAsync();
+        if (_minuteTimer is not null) await _minuteTimer.DisposeAsync().ConfigureAwait(false);
+        if (_summaryTimer is not null) await _summaryTimer.DisposeAsync().ConfigureAwait(false);
 
         // 取消订阅 + dispose timer 后不会再有新任务进来;这里等存量在途任务收尾,
         // 避免班次结算在关闭瞬间被中断,导致 ShiftSummary 写一半 / Excel 不完整。

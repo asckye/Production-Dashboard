@@ -50,6 +50,12 @@ public static class WatchdogRunner
             return 0;
         }
 
+        // 判断心跳是否过期用单调时钟:记录"心跳时间戳最后一次变化"的时刻,
+        // 而不是拿系统时间减去文件里的时间戳 —— 校时 / 手动改系统时间会让后者误判。
+        // 一直读不到心跳文件也算没有进展,超时后同样重启。
+        DateTimeOffset? lastStamp = null;
+        var lastProgressAt = Environment.TickCount64;
+
         while (true)
         {
             Thread.Sleep(args.PollIntervalMs);
@@ -65,24 +71,26 @@ public static class WatchdogRunner
             }
 
             var hb = HeartbeatFile.TryRead(args.HeartbeatPath);
-            if (hb is null)
+            if (hb is not null)
             {
-                // 启动前几秒还没写出来,继续等 (但不能无限等,加个保护)
-                continue;
+                if (hb.GracefulExit)
+                {
+                    WriteLog("watchdog: 主程序已置 gracefulExit,守护退出");
+                    return 0;
+                }
+
+                if (hb.Timestamp != lastStamp)
+                {
+                    lastStamp = hb.Timestamp;
+                    lastProgressAt = Environment.TickCount64;
+                }
             }
 
-            if (hb.GracefulExit)
+            var stalledMs = Environment.TickCount64 - lastProgressAt;
+            if (stalledMs > args.TimeoutMs)
             {
-                WriteLog("watchdog: 主程序已置 gracefulExit,守护退出");
-                return 0;
-            }
-
-            var age = DateTimeOffset.UtcNow - hb.Timestamp;
-            if (age.TotalMilliseconds > args.TimeoutMs)
-            {
-                WriteLog($"watchdog: 心跳过期 {age.TotalSeconds:F1}s > {args.TimeoutMs / 1000.0:F1}s,杀进程重启");
-                KillAndRestart(parent, args);
-                return 0;
+                WriteLog($"watchdog: 心跳已 {stalledMs / 1000.0:F1}s 未更新 > {args.TimeoutMs / 1000.0:F1}s,杀进程重启");
+                return KillAndRestart(parent, args) ? 0 : 4;
             }
         }
     }
@@ -97,23 +105,34 @@ public static class WatchdogRunner
         return !hb.GracefulExit;
     }
 
-    private static void KillAndRestart(Process parent, WatchdogArgs args)
+    /// <summary>
+    /// 杀掉卡死的主程序并重新拉起。只杀主程序本身:守护进程是主程序的子进程,
+    /// <c>Kill(entireProcessTree: true)</c> 会因为进程树里包含调用者自己而直接抛异常。
+    /// 主程序确认退出后才重启,避免同时跑两个实例。返回是否已重启。
+    /// </summary>
+    private static bool KillAndRestart(Process parent, WatchdogArgs args)
     {
         try
         {
             if (!parent.HasExited)
             {
-                parent.Kill(entireProcessTree: true);
-                parent.WaitForExit(10_000);
+                parent.Kill(entireProcessTree: false);
+            }
+            if (!parent.WaitForExit(10_000))
+            {
+                WriteLog($"watchdog: 主程序 pid {args.ParentPid} 10s 内未退出,放弃重启");
+                return false;
             }
         }
         catch (Exception ex)
         {
-            WriteLog($"watchdog: kill 失败 · {ex.Message}");
+            WriteLog($"watchdog: kill 失败,放弃重启 · {ex.Message}");
+            return false;
         }
 
         Thread.Sleep(args.RestartDelayMs);
         LaunchMain(args);
+        return true;
     }
 
     private static void LaunchMain(WatchdogArgs args)

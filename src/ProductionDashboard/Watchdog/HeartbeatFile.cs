@@ -51,8 +51,11 @@ public static class HeartbeatFile
 
         try
         {
-            var json = File.ReadAllText(path);
-            return JsonSerializer.Deserialize<Heartbeat>(json, JsonOptions);
+            // 允许读的同时被覆盖:File.ReadAllText 不带 FileShare.Delete,
+            // 守护进程读文件的瞬间,主程序 Write 里的 File.Move 覆盖会被拒绝(Access denied)
+            using var stream = new FileStream(
+                path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+            return JsonSerializer.Deserialize<Heartbeat>(stream, JsonOptions);
         }
         catch (Exception)
         {

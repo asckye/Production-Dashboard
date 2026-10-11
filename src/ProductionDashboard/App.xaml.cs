@@ -21,7 +21,11 @@ namespace ProductionDashboard;
 /// </summary>
 public partial class App : Application
 {
+    private static readonly TimeSpan GracefulStopTimeout = TimeSpan.FromSeconds(10);
+    private static readonly TimeSpan FallbackStopTimeout = TimeSpan.FromSeconds(5);
+
     private IHost? _host;
+    private bool _shutdownStarted;
 
     /// <summary>应用启动入口 — 构建 Generic Host,挂全局异常,显示主窗口。</summary>
     protected override void OnStartup(StartupEventArgs e)
@@ -109,48 +113,79 @@ public partial class App : Application
         };
     }
 
-    /// <summary>应用退出 — 优雅停 host(2s + 3s 兜底),flush 日志,Environment.Exit 兜底进程退出。</summary>
+    /// <summary>
+    /// 优雅退出(由主窗口在退出密码验证通过后调用)。
+    /// <para>
+    /// 在 UI 线程上<b>异步</b>等待所有后台服务停止:等待期间 UI 线程仍在处理消息,
+    /// 需要回到 UI 线程收尾的服务(如 UI 心跳)不会与之互相等待而死锁。全部停止后再关闭应用。
+    /// </para>
+    /// </summary>
+    public async Task ShutdownGracefullyAsync(int exitCode = 0)
+    {
+        if (_shutdownStarted) return;
+        _shutdownStarted = true;
+
+        await StopHostAsync(GracefulStopTimeout);
+        Shutdown(exitCode);
+    }
+
+    /// <summary>
+    /// 应用退出的最后一步:flush 日志并结束进程。
+    /// <para>
+    /// 正常情况下后台服务已在 <see cref="ShutdownGracefullyAsync"/> 中停止;
+    /// 若是其它途径触发的退出(例如 Windows 注销 / 关机),这里在线程池上停止后台服务并限时等待,
+    /// 不在 UI 线程上做任何同步等待,避免死锁。
+    /// </para>
+    /// </summary>
     protected override void OnExit(ExitEventArgs e)
     {
         if (_host is not null)
         {
-            var logger = _host.Services.GetRequiredService<ILogger<App>>();
-            logger.LogInformation("ProductionDashboard 退出");
-
-            try
-            {
-                // 2s 超时给所有 hosted service 收尾(看门狗 kill / 心跳标记 / DB Channel drain)
-                // 外层再加 3s 硬超时:任何一个忽略 cancellationToken 的服务(例如卡在
-                // 同步阻塞 IO 的 PLC 库)不会再把 UI 线程拖死,过期就抛弃等待继续走。
-                //
-                // 用 Task.Run 把 StopAsync 派到线程池:若某个 StopAsync 内部回到 UI 线程
-                // (Dispatcher.Invoke)而此刻 UI 线程正阻塞在下面的 Wait,就会经典死锁。
-                // 放到线程池线程跑可避免这个 sync-over-async 陷阱。
-                var stopTask = Task.Run(() => _host.StopAsync(TimeSpan.FromSeconds(2)));
-                if (!stopTask.Wait(TimeSpan.FromSeconds(3)))
-                {
-                    logger.LogWarning("Host.StopAsync 超过 3s 未完成,放弃等待并强制退出");
-                }
-            }
-            catch (Exception ex)
-            {
-                logger.LogWarning(ex, "Host.StopAsync 抛异常,继续走 Dispose");
-            }
-
-            try { _host.Dispose(); }
-            catch (Exception ex) { logger.LogWarning(ex, "Host.Dispose 失败"); }
-            _host = null;
+            var stopTask = Task.Run(() => StopHostAsync(FallbackStopTimeout));
+            stopTask.Wait(FallbackStopTimeout + TimeSpan.FromSeconds(2));
         }
 
-        // 先让 base.OnExit 跑完 — 它会触发 Application.Exit 事件 + 关掉剩余窗口,
-        // 期间订阅方可能还在写日志;之后再 CloseAndFlush,把这些尾巴日志也冲到磁盘。
         base.OnExit(e);
         Log.CloseAndFlush();
 
-        // 兜底:某些第三方库(如 Sharp7 内部的 socket 后台任务)在 PLC 不可达时会
-        // 残留尚未结束的非托管资源 / 终结器任务,偶发性地延后进程退出。
-        // 显式 Environment.Exit 保证用户点退出后任务管理器里 0 残留。
+        // 兜底:第三方库(如 Sharp7 的 socket 后台任务)可能残留前台资源而推迟进程退出,
+        // 显式 Environment.Exit 保证退出后任务管理器里没有残留进程。
         Environment.Exit(e.ApplicationExitCode);
+    }
+
+    /// <summary>停止并释放所有后台服务。可在 UI 线程上 await,也可在线程池上运行;只会执行一次。</summary>
+    private async Task StopHostAsync(TimeSpan timeout)
+    {
+        var host = Interlocked.Exchange(ref _host, null);
+        if (host is null) return;
+
+        var logger = host.Services.GetRequiredService<ILogger<App>>();
+        logger.LogInformation("ProductionDashboard 退出 · 正在停止后台服务");
+
+        using (var cts = new CancellationTokenSource(timeout))
+        {
+            try
+            {
+                await host.StopAsync(cts.Token);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "停止后台服务时出错(继续退出)");
+            }
+        }
+
+        logger.LogInformation("ProductionDashboard 后台服务已停止");
+
+        try
+        {
+            // 部分服务只实现了 IAsyncDisposable,必须异步释放
+            if (host is IAsyncDisposable asyncDisposable) await asyncDisposable.DisposeAsync();
+            else host.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "释放后台服务时出错(继续退出)");
+        }
     }
 
     /// <summary>

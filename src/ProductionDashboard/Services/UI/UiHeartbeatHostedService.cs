@@ -24,6 +24,7 @@ public sealed class UiHeartbeatHostedService : IHostedService, IAsyncDisposable
 
     private DispatcherTimer? _timer;
     private int _currentPid;
+    private int _stopped;   // 0 = 运行中,1 = 已停止。本服务既作单例又作后台服务注册,StopAsync / DisposeAsync 可能被多次调用
 
     /// <summary>注入 WatchdogOptions 和日志,解析心跳文件绝对路径并取版本号。</summary>
     public UiHeartbeatHostedService(
@@ -73,22 +74,24 @@ public sealed class UiHeartbeatHostedService : IHostedService, IAsyncDisposable
         return Task.CompletedTask;
     }
 
-    /// <summary>停止 — 停 timer 并写一次 graceful=true,让守护进程知道是优雅退出不要重启。</summary>
+    /// <summary>
+    /// 停止 — 停 timer 并写一次 graceful=true,让守护进程知道是优雅退出不要重启。只执行一次。
+    /// <para>
+    /// 不能用 <c>Dispatcher.Invoke</c> 同步回到 UI 线程:退出时 UI 线程可能正在等待本方法,会互相等待而死锁。
+    /// 先置停止标志让 OnTick 不再写心跳,再异步请求停止 timer。
+    /// </para>
+    /// </summary>
     public Task StopAsync(CancellationToken cancellationToken)
     {
-        if (_timer is not null)
+        if (Interlocked.Exchange(ref _stopped, 1) == 1) return Task.CompletedTask;
+
+        var timer = _timer;
+        _timer = null;
+        if (timer is not null)
         {
-            // DispatcherTimer.Stop 必须在 Dispatcher 上
-            var dispatcher = _timer.Dispatcher;
-            if (dispatcher.CheckAccess())
-            {
-                _timer.Stop();
-            }
-            else
-            {
-                dispatcher.Invoke(_timer.Stop);
-            }
-            _timer = null;
+            // DispatcherTimer.Stop 必须在 Dispatcher 上执行
+            if (timer.Dispatcher.CheckAccess()) timer.Stop();
+            else timer.Dispatcher.BeginInvoke(timer.Stop);
         }
 
         // 主程序优雅退出 → 写 gracefulExit=true,守护看到就不再重启
@@ -106,6 +109,7 @@ public sealed class UiHeartbeatHostedService : IHostedService, IAsyncDisposable
 
     private void OnTick(object? sender, EventArgs e)
     {
+        if (Volatile.Read(ref _stopped) == 1) return;   // 已停止:不要覆盖 graceful 标记
         WriteOnce(graceful: false);
     }
 

@@ -9,6 +9,13 @@ All notable changes to this project are documented here. The format is based on 
 ### 修复 / Fixed
 
 - 「班次实时对比」中的领先标签(本周 / 本月 / 本年差值)和「本月领先」徽章固定显示 A 班颜色;现在随领先方变化:A 班橙色、B 班蓝色、持平为中性色 / Leader labels in the shift comparison (week / month / year deltas and the monthly leader badge) always used team A's color; they now follow the leading team (A orange, B blue, neutral when tied)
+- 输入正确的退出密码后窗口关闭但进程不退出(后台服务停止时与 UI 线程互相等待),残留进程还会继续连接 PLC;现在几秒内完整退出,所有后台服务正常停止 / After the correct exit password the window closed but the process kept running (background services and the UI thread waited on each other) and kept polling the PLC; exiting now completes within seconds and stops every background service cleanly
+- Alt+F4 或任务栏关闭可以绕过退出密码直接关掉大屏;现在同样要输入密码 / Alt+F4 or closing from the taskbar bypassed the exit password; it now asks for the password too
+- 看门狗结束不了卡死的主程序(结束进程树时包含看门狗自己而报错),结束失败时还会再启动一个实例;现在只结束主程序,确认退出后才重启 / The watchdog could not kill a hung main program (killing the process tree included the watchdog itself and threw), and it started another instance even when the kill failed; it now kills only the main program and restarts only after it has exited
+- 看门狗用系统时间判断心跳是否过期,校时或改系统时间会误判;现在按心跳最后一次更新后经过的时间判断,一直读不到心跳文件也会在超时后重启 / The watchdog judged heartbeat staleness by wall-clock time, so clock changes caused false or missed restarts; it now measures the time since the heartbeat last changed, and a heartbeat file that never appears also triggers a restart after the timeout
+- 看门狗读心跳文件的同时,主程序覆盖心跳偶尔会"拒绝访问"并记录告警 / Overwriting the heartbeat occasionally failed with "access denied" while the watchdog was reading it
+- 退出 / 登录密码框按一次回车会校验两次,输错一次被记为两次失败,更快触发锁定 / Pressing Enter once in the exit or login password box validated twice, so one wrong entry counted as two failures and triggered the lockout sooner
+- 密码框打开时鼠标仍会因空闲被隐藏 / The mouse cursor could be hidden by the idle timer while a password dialog was open
 
 ## [1.1.0] - 2026-10-11
 

@@ -96,7 +96,7 @@ dotnet run --project src/ProductionDashboard
 3. ShiftManager 识别当前班次,激活对应面板
 4. 大屏窗口打开,实时数字 + 进度条开始跳动
 
-按 **Esc** 退出,输入密码(默认 `1234`,**部署前请改强密码**)。
+按 **Esc** 退出,输入密码(默认 `1234`,**部署前请改强密码**)。Alt+F4 或从任务栏关闭同样需要密码。
 
 ---
 
@@ -263,7 +263,7 @@ dotnet publish src/ProductionDashboard -c Release -p:PublishProfile=win-x64 -o p
 
 主程序启动时 fork 一个 `--watchdog` 子进程,监视 UI 心跳(`runtime/heartbeat.json`)。心跳由主进程 **UI 线程上的 DispatcherTimer** 写入,所以 UI 死锁 = 心跳停止 = 守护识别。
 
-- 心跳过期 → 杀掉主程序进程树 + 等 3 秒释放句柄 + 重启
+- 心跳超过 `HeartbeatTimeoutMs`(默认 60 秒)没有更新 → 结束主程序 + 等 3 秒释放句柄 + 重启;主程序没能结束时不重启,避免同时跑两个实例
 - 主程序优雅退出 → 写 `gracefulExit=true`,守护读到后直接退出
 - 守护日志在 `logs/watchdog-yyyy-MM-dd.log`,与主程序独立
 

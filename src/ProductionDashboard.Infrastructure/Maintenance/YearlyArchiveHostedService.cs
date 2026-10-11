@@ -70,7 +70,7 @@ public sealed class YearlyArchiveHostedService : IHostedService, IAsyncDisposabl
         _stopped = true;
         if (_cts is null) return;
 
-        try { await _cts.CancelAsync(); }
+        try { await _cts.CancelAsync().ConfigureAwait(false); }
         catch (ObjectDisposedException) { return; }
 
         if (_loop is not null)

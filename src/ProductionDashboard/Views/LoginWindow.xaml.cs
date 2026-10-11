@@ -30,9 +30,15 @@ public partial class LoginWindow : Window
 
     private void OnAnyKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key == Key.Enter) Validate();
+        // 标记已处理:否则 IsDefault 的确认按钮会再响应同一次回车,一次输错被记成两次失败
+        if (e.Key == Key.Enter)
+        {
+            e.Handled = true;
+            Validate();
+        }
         else if (e.Key == Key.Escape)
         {
+            e.Handled = true;
             DialogResult = false;
             Close();
         }

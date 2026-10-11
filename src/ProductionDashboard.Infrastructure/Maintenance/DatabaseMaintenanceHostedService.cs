@@ -62,7 +62,7 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
     public async Task StopAsync(CancellationToken cancellationToken)
     {
         if (_cts is null) return;
-        try { await _cts.CancelAsync(); }
+        try { await _cts.CancelAsync().ConfigureAwait(false); }
         catch (ObjectDisposedException) { return; }    // 已 dispose,直接结束
 
         if (_loop is not null)

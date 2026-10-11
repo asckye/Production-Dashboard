@@ -102,7 +102,7 @@ public sealed class ShiftManager : IShiftManager, IHostedService, IAsyncDisposab
         _stopped = true;
         if (_timer is not null)
         {
-            await _timer.DisposeAsync();
+            await _timer.DisposeAsync().ConfigureAwait(false);
             _timer = null;
         }
         _logger.LogInformation("ShiftManager 停止");

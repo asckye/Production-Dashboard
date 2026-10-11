@@ -98,7 +98,7 @@ On startup the app runs four initialization steps, which you can follow in `logs
 3. ShiftManager determines the current shift and activates the matching panel
 4. The dashboard window opens and the live numbers and progress bars start updating
 
-Press **Esc** to exit and enter the password (default `1234`; **change it before deployment**).
+Press **Esc** to exit and enter the password (default `1234`; **change it before deployment**). Alt+F4 or closing from the taskbar asks for the password too.
 
 ---
 
@@ -265,7 +265,7 @@ Copy the whole `publish/` folder to the target machine and double-click the exe.
 
 On startup the main program spawns a `--watchdog` child process that monitors the UI heartbeat (`runtime/heartbeat.json`). The heartbeat is written by a **DispatcherTimer on the UI thread**, so a UI deadlock stops the heartbeat and the watchdog notices.
 
-- Heartbeat expired → kill the main process tree, wait 3 seconds for handles to be released, restart
+- Heartbeat not updated for `HeartbeatTimeoutMs` (60 seconds by default) → kill the main program, wait 3 seconds for handles to be released, restart; if the main program can't be killed, no restart, so two instances never run at once
 - Graceful exit → the main program writes `gracefulExit=true` and the watchdog exits
 - Watchdog logs go to `logs/watchdog-yyyy-MM-dd.log`, separate from the main program's logs
 

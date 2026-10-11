@@ -139,7 +139,7 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
             }
             catch (OperationCanceledException)
             {
-                try { await _drainCts.CancelAsync(); }
+                try { await _drainCts.CancelAsync().ConfigureAwait(false); }
                 catch (ObjectDisposedException) { /* 已处理过,忽略 */ }
                 try { await _drainTask.ConfigureAwait(false); }
                 catch (OperationCanceledException) { /* expected */ }
