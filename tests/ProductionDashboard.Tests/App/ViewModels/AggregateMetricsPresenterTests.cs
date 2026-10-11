@@ -5,8 +5,8 @@ using ProductionDashboard.ViewModels.Dashboard;
 namespace ProductionDashboard.Tests.App.ViewModels;
 
 /// <summary>
-/// AggregateMetricsPresenter 的纯计算函数测试。这些函数(B 档重构后)从 UI 线程剥离为
-/// internal static,使原本零测试的 mini 柱图分桶 / 领先判定逻辑获得回归保护。
+/// AggregateMetricsPresenter 的纯计算函数测试(mini 柱图分桶、累计对比、领先判定)。
+/// 这些函数是 internal static 的纯函数,不依赖 UI 线程,可以直接测试。
 /// </summary>
 public sealed class AggregateMetricsPresenterTests
 {
@@ -119,5 +119,46 @@ public sealed class AggregateMetricsPresenterTests
     {
         AggregateMetricsPresenter.ComputeMonthLeaderText(50, 50, "甲班", "乙班")
             .Should().Contain("持平");
+    }
+
+    // ── 累计对比行:领先标签与颜色 ────────────────────────────────
+
+    [Fact]
+    public void BuildCumulativeRow_marks_team_a_as_leader_when_a_is_ahead()
+    {
+        var row = AggregateMetricsPresenter.BuildCumulativeRow("本年", 396_411, 306_096, "A 班", "B 班");
+
+        row.DiffText.Should().Be("A 班 +90,315");
+        row.LeaderKind.Should().Be("A");
+        row.APct.Should().Be(100);
+    }
+
+    [Fact]
+    public void BuildCumulativeRow_marks_team_b_as_leader_when_b_is_ahead()
+    {
+        var row = AggregateMetricsPresenter.BuildCumulativeRow("本周", 7_904, 9_851, "A 班", "B 班");
+
+        row.DiffText.Should().Be("B 班 +1,947");
+        row.LeaderKind.Should().Be("B", "B 班领先时标签应使用 B 班的颜色");
+        row.BPct.Should().Be(100);
+    }
+
+    [Fact]
+    public void BuildCumulativeRow_marks_a_tie_as_neutral()
+    {
+        var row = AggregateMetricsPresenter.BuildCumulativeRow("本月", 1_200, 1_200, "A 班", "B 班");
+
+        row.DiffText.Should().Be("持平");
+        row.LeaderKind.Should().Be("T");
+    }
+
+    [Theory]
+    [InlineData(15_661, 12_255, "A")]
+    [InlineData(12_255, 15_661, "B")]
+    [InlineData(500, 500, "T")]
+    [InlineData(0, 0, "T")]
+    public void ComputeLeaderKind_picks_the_team_with_more_output(int a, int b, string expected)
+    {
+        AggregateMetricsPresenter.ComputeLeaderKind(a, b).Should().Be(expected);
     }
 }

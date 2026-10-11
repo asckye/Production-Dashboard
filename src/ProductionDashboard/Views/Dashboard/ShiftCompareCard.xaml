@@ -35,21 +35,60 @@
                                Foreground="{DynamicResource Brush.Text0}"
                                Margin="10,0,12,0" VerticalAlignment="Center" />
                 </StackPanel>
-                <!-- 领先徽章 · Height=30 + CornerRadius=15 -->
-                <Border HorizontalAlignment="Right" VerticalAlignment="Center"
-                        Height="30" CornerRadius="15"
-                        Padding="14,0" BorderThickness="1"
-                        BorderBrush="{DynamicResource Brush.ShiftA}">
-                    <Border.Background>
-                        <SolidColorBrush Color="{DynamicResource Color.ShiftA}" Opacity="0.12" />
-                    </Border.Background>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="👑" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
-                        <TextBlock Text="{Binding Metrics.LeaderText}"
-                                   Foreground="{DynamicResource Brush.ShiftA}"
-                                   FontSize="13" FontWeight="Bold" VerticalAlignment="Center" />
-                    </StackPanel>
-                </Border>
+                <!-- 领先徽章 · Height=30 + CornerRadius=15。颜色跟本月领先方走:A 班橙色 / B 班蓝色 / 持平中性色 -->
+                <Grid HorizontalAlignment="Right" VerticalAlignment="Center" Height="30">
+                    <!-- 底色:领先方颜色的 12% 透明度 -->
+                    <Border CornerRadius="15" Opacity="0.12">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="{DynamicResource Brush.Text2}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="A">
+                                        <Setter Property="Background" Value="{DynamicResource Brush.ShiftA}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="B">
+                                        <Setter Property="Background" Value="{DynamicResource Brush.ShiftB}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                    </Border>
+                    <!-- 描边 + 文字 -->
+                    <Border CornerRadius="15" Padding="14,0" BorderThickness="1">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="BorderBrush" Value="{DynamicResource Brush.Text2}" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="A">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftA}" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="B">
+                                        <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftB}" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="👑" FontSize="14" Margin="0,0,8,0" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding Metrics.LeaderText}"
+                                       FontSize="13" FontWeight="Bold" VerticalAlignment="Center">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock">
+                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="A">
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftA}" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Metrics.MonthLeaderKind}" Value="B">
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftB}" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Grid>
 
             <!-- Row 2: A 班 | B 班 并排 -->
@@ -414,10 +453,24 @@
 
                                         <StackPanel Grid.Column="2" VerticalAlignment="Center"
                                                     HorizontalAlignment="Right" Margin="6,0,0,0">
+                                            <!-- 领先标签颜色跟领先方走:A 班橙色 / B 班蓝色 / 持平中性色 -->
                                             <TextBlock Text="{Binding DiffText}"
                                                        FontSize="13" FontWeight="Bold"
-                                                       Foreground="{DynamicResource Brush.ShiftA}"
-                                                       HorizontalAlignment="Right" />
+                                                       HorizontalAlignment="Right">
+                                                <TextBlock.Style>
+                                                    <Style TargetType="TextBlock">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.Text2}" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding LeaderKind}" Value="A">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftA}" />
+                                                            </DataTrigger>
+                                                            <DataTrigger Binding="{Binding LeaderKind}" Value="B">
+                                                                <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftB}" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </TextBlock.Style>
+                                            </TextBlock>
                                             <TextBlock Text="{Binding DiffPctText}"
                                                        FontSize="9"
                                                        Foreground="{DynamicResource Brush.Text2}"

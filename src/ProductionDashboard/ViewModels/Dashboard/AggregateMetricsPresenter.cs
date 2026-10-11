@@ -101,6 +101,8 @@ public sealed partial class AggregateMetricsPresenter : ObservableObject
 
     /// <summary>本月对比的领先总结(顶栏 / Hero 区显示),例 "本月 A 班 领先 +123 件 (+5.0%)"。</summary>
     [ObservableProperty] public partial string LeaderText { get; set; } = "—";
+    /// <summary>本月领先方 — "A" / "B" / "T"(持平)。UI 用此切换领先徽章的颜色。</summary>
+    [ObservableProperty] public partial string MonthLeaderKind { get; set; } = "T";
 
     // ── Mini 柱图 ──────────────────────────────────────────────────
 
@@ -137,6 +139,7 @@ public sealed partial class AggregateMetricsPresenter : ObservableObject
         var (leaderText, leaderKind) = ComputeCumulativeLeader(
             a.Week, b.Week, a.Month, b.Month, a.Year, b.Year, teamAName, teamBName);
         var monthLeaderText = ComputeMonthLeaderText(a.Month, b.Month, teamAName, teamBName);
+        var monthLeaderKind = ComputeLeaderKind(a.Month, b.Month);
 
         var hourBars = ComputeHourBars(stats.YesterdayHourly, stats.TodayHourly, p.CurrentHour);
         var dayBars = ComputeDayBars(p.Today.AddDays(-6), p.Today, stats.LastSevenDays);
@@ -153,6 +156,7 @@ public sealed partial class AggregateMetricsPresenter : ObservableObject
             CumulativeLeaderText = leaderText;
             CumulativeLeaderKind = leaderKind;
             LeaderText = monthLeaderText;
+            MonthLeaderKind = monthLeaderKind;
 
             SyncList(HourMini, hourBars);
             SyncList(DayMini, dayBars);
@@ -249,8 +253,11 @@ public sealed partial class AggregateMetricsPresenter : ObservableObject
             : $"{(Math.Abs(diff) * 100.0 / basis):+0.0;-0.0;0}%";
         return new CumulativeRow(label, aPct, bPct,
             a.ToString("N0"), b.ToString("N0"),
-            diffText, diffPctText, aLeads);
+            diffText, diffPctText, ComputeLeaderKind(a, b));
     }
+
+    /// <summary>领先方:A 多返回 "A",B 多返回 "B",相等返回 "T"(持平)。</summary>
+    internal static string ComputeLeaderKind(int a, int b) => a > b ? "A" : b > a ? "B" : "T";
 
     internal static string ComputeMonthLeaderText(
         int aMonth, int bMonth, string teamAName, string teamBName)
@@ -431,6 +438,7 @@ public sealed partial class AggregateMetricsPresenter : ObservableObject
 }
 
 /// <summary>累计对比一行(本周/本月/本年)。</summary>
+/// <param name="LeaderKind">领先方:"A" / "B" / "T"(持平)。界面据此切换领先标签的颜色。</param>
 public sealed record CumulativeRow(
     string Label,
     double APct,
@@ -439,7 +447,7 @@ public sealed record CumulativeRow(
     string BCountText,
     string DiffText,
     string DiffPctText,
-    bool ALeads);
+    string LeaderKind);
 
 /// <summary>5 维度卡的 mini 柱图的一根柱。Height 已按 series 内 max 归一化到像素。</summary>
 public sealed record MiniBar(string Label, double Height, bool IsToday);

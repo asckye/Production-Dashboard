@@ -4,6 +4,12 @@
 
 All notable changes to this project are documented here. The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### 修复 / Fixed
+
+- 「班次实时对比」中的领先标签(本周 / 本月 / 本年差值)和「本月领先」徽章固定显示 A 班颜色;现在随领先方变化:A 班橙色、B 班蓝色、持平为中性色 / Leader labels in the shift comparison (week / month / year deltas and the monthly leader badge) always used team A's color; they now follow the leading team (A orange, B blue, neutral when tied)
+
 ## [1.1.0] - 2026-10-11
 
 首次发布 / Initial release.
@@ -23,4 +29,5 @@ All notable changes to this project are documented here. The format is based on 
 - GitHub Actions CI:Windows 上构建并运行测试 / GitHub Actions CI that builds and tests on Windows
 - `tools/plc-sim`:无需硬件的软件 S7 PLC,用于本地开发与演示 / `tools/plc-sim`: a software S7 PLC for local development and demos, no hardware needed
 
+[Unreleased]: https://github.com/asckye/Production-Dashboard/compare/v1.1.0...main
 [1.1.0]: https://github.com/asckye/Production-Dashboard/releases/tag/v1.1.0
