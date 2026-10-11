@@ -6,6 +6,22 @@ All notable changes to this project are documented here. The format is based on 
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-11
+
+稳定性与数据准确性更新:修复退出残留进程、看门狗、断线漏计、分钟聚合漏数、年度归档覆盖等问题,界面适配各种分辨率。
+A stability and data-accuracy release: fixes the leftover process on exit, the watchdog, counts lost on reconnect, gaps in minute aggregation, archive overwrites and more, and the UI now fits any resolution.
+
+### 新增 / Added
+
+- 班组配置页每个班次都可以直接选择由哪个班组生产;新增班次按顺序轮流带出默认班组,应用模板时按顺序沿用原班次的班组 / Each shift on the configuration page now has a team selector; new shifts get a default team by rotation, and applying a template keeps the original shifts' teams in order
+- 界面按 1920×1080 设计、随窗口等比缩放,从 1280×720 到 4K 都完整显示 / The UI is designed at 1920×1080 and scales proportionally with the window, displaying in full from 1280×720 up to 4K
+
+### 变更 / Changed
+
+- 产量按信号自身的时间戳归属班次;班次切换检测间隔默认从 30 秒改为 1 秒(`Shift:CheckIntervalMs`) / Output is attributed to shifts by each signal's own timestamp; the shift-change check interval now defaults to 1 second instead of 30 (`Shift:CheckIntervalMs`)
+- 升级后首次启动会自动执行数据库迁移 v3(用原始事件补全分钟聚合)和 v4(清理已删除班次残留的班组分配),数据量大时这次启动会慢一些 / The first start after upgrading runs database migrations v3 (backfilling minute aggregates from raw events) and v4 (removing team assignments left on deleted shifts); with a large database this start takes longer
+- 删除的班次保存后立即停止生效 / A deleted shift stops taking effect as soon as the change is saved
+
 ### 修复 / Fixed
 
 - 「班次实时对比」中的领先标签(本周 / 本月 / 本年差值)和「本月领先」徽章固定显示 A 班颜色;现在随领先方变化:A 班橙色、B 班蓝色、持平为中性色 / Leader labels in the shift comparison (week / month / year deltas and the monthly leader badge) always used team A's color; they now follow the leading team (A orange, B blue, neutral when tied)
@@ -62,5 +78,6 @@ All notable changes to this project are documented here. The format is based on 
 - GitHub Actions CI:Windows 上构建并运行测试 / GitHub Actions CI that builds and tests on Windows
 - `tools/plc-sim`:无需硬件的软件 S7 PLC,用于本地开发与演示 / `tools/plc-sim`: a software S7 PLC for local development and demos, no hardware needed
 
-[Unreleased]: https://github.com/asckye/Production-Dashboard/compare/v1.1.0...main
+[Unreleased]: https://github.com/asckye/Production-Dashboard/compare/v1.2.0...main
+[1.2.0]: https://github.com/asckye/Production-Dashboard/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/asckye/Production-Dashboard/releases/tag/v1.1.0

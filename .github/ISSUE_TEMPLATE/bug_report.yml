@@ -39,7 +39,7 @@ body:
     attributes:
       label: 版本 / Version
       description: exe 文件属性中的版本号,或 commit SHA / Version from the exe properties, or commit SHA
-      placeholder: 1.1.0.0
+      placeholder: 1.2.0.0
     validations:
       required: true
 
