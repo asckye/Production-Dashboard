@@ -205,6 +205,30 @@ public sealed class CountingServiceTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// 班次交接后、ShiftManager 还没检测到切换的那一小段时间:信号按自己的时间戳记到新班次 / 新班组,
+    /// 不能记到旧班次头上;旧班次的内存计数也不能增加。
+    /// </summary>
+    [Fact]
+    public async Task Signal_after_boundary_is_attributed_by_its_timestamp_not_by_stale_current_shift()
+    {
+        var d19 = new DateOnly(2026, 5, 19);
+        _shifts.Current = AAssignment(d19);          // ShiftManager 还停留在白班
+        _shifts.ShiftAt = _ => BAssignment(d19);     // 但信号时刻已经是夜班
+        _teams.Assign(slot: 1, MakeTeam(TeamIdA, "A 班"));
+        _teams.Assign(slot: 2, MakeTeam(TeamIdB, "B 班"));
+        await _sut.StartAsync(CancellationToken.None);
+
+        for (var i = 0; i < 3; i++) _plc.RaiseSignal();
+        await FlushDrainAsync();
+
+        (await _analytics.CountEventsByTeamRangeAsync(d19, d19, TeamIdB, CancellationToken.None))
+            .Should().Be(3, "按信号时间戳归到夜班的 B 班组");
+        (await _analytics.CountEventsByTeamRangeAsync(d19, d19, TeamIdA, CancellationToken.None))
+            .Should().Be(0);
+        _sut.GetCountForTeam(TeamIdA).Should().Be(0, "白班的实时计数不应增加");
+    }
+
+    /// <summary>
     /// 倒班(slot↔team 重分配)后,旧班组的累计应保留,新班组从 0 开始,
     /// 但是是在内存层面 — 由 TeamAssignmentService.Swap 引起的;CountingService 自身的
     /// "班次周期切换"清零和这个独立。本测试用 DB 视角验证数据归属切换正确。
@@ -314,7 +338,10 @@ public sealed class CountingServiceTests : IAsyncLifetime
 #pragma warning disable CS0067
         public event Action? DefinitionsChanged;
 #pragma warning restore CS0067
-        public ShiftAssignment? GetShiftAt(DateTime localTime) => Current;
+        /// <summary>按信号时刻返回所属班次;不设置时与 <see cref="Current"/> 相同。</summary>
+        public Func<DateTime, ShiftAssignment?>? ShiftAt { get; set; }
+
+        public ShiftAssignment? GetShiftAt(DateTime localTime) => ShiftAt is null ? Current : ShiftAt(localTime);
         public Task RefreshAsync(CancellationToken ct) => Task.CompletedTask;
 
         public void TriggerShiftChange(ShiftAssignment? oldS, ShiftAssignment? newS)

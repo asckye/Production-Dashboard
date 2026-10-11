@@ -59,10 +59,11 @@ public sealed class AggregationHostedService : IHostedService, IAsyncDisposable
     /// <summary>启动 — 起两个 timer:每分钟聚合、每 5 秒刷新 Summary。</summary>
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // 启动后很快先跑一次:把停机前没来得及聚合的分钟补上,累计数字尽快准确
         _minuteTimer = _clock.CreateTimer(
             _ => FireAndForget(() => _minuteAggregator.AggregateAsync(CancellationToken.None)),
             state: null,
-            dueTime: MinuteAggregationInterval,
+            dueTime: TimeSpan.FromSeconds(5),
             period: MinuteAggregationInterval);
 
         _summaryTimer = _clock.CreateTimer(

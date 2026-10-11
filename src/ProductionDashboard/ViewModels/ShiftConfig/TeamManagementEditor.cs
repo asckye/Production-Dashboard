@@ -65,15 +65,10 @@ public sealed class TeamManagementEditor
         DirtyStateChanged?.Invoke();
     }
 
-    /// <summary>
-    /// 保存所有 dirty 班组。校验失败时显示 toast 并返回 false(让 facade 中断后续保存)。
-    /// </summary>
-    public async Task<bool> SaveAsync(CancellationToken cancellationToken)
+    /// <summary>保存前校验所有 dirty 班组。发现问题时显示 toast 并返回 false。</summary>
+    public bool Validate()
     {
-        var dirty = EditableTeams.Where(t => t.IsDirty).ToList();
-        if (dirty.Count == 0) return true;
-
-        foreach (var et in dirty)
+        foreach (var et in EditableTeams.Where(t => t.IsDirty))
         {
             if (string.IsNullOrWhiteSpace(et.Name))
             {
@@ -86,6 +81,17 @@ public sealed class TeamManagementEditor
                 return false;
             }
         }
+        return true;
+    }
+
+    /// <summary>
+    /// 保存所有 dirty 班组。校验失败时显示 toast 并返回 false(让 facade 中断后续保存)。
+    /// </summary>
+    public async Task<bool> SaveAsync(CancellationToken cancellationToken)
+    {
+        var dirty = EditableTeams.Where(t => t.IsDirty).ToList();
+        if (dirty.Count == 0) return true;
+        if (!Validate()) return false;
 
         // 成员名单(Members)不在界面上编辑,沿用原值
         var updated = dirty

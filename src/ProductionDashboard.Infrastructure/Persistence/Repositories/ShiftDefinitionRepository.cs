@@ -56,40 +56,33 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
         return row is null ? null : MapShift(row);
     }
 
-    /// <inheritdoc/>
-    public async Task UpdateShiftDefinitionAsync(
-        ShiftDefinition definition, CancellationToken cancellationToken)
-    {
-        ArgumentNullException.ThrowIfNull(definition);
+    private const string InsertSql = """
+        INSERT INTO ShiftDefinition
+            (Code, Name, StartTime, EndTime, CrossesMidnight,
+             TargetCount, ColorHex, DisplayOrder,
+             EffectiveFrom, EffectiveTo, CreatedAt)
+        VALUES
+            (@Code, @Name, @StartTime, @EndTime, @CrossesMidnight,
+             @TargetCount, @ColorHex, @DisplayOrder,
+             @EffectiveFrom, @EffectiveTo, @CreatedAt);
+        SELECT last_insert_rowid();
+        """;
 
-        const string sql = """
-            UPDATE ShiftDefinition SET
-                Name            = @Name,
-                StartTime       = @StartTime,
-                EndTime         = @EndTime,
-                CrossesMidnight = @CrossesMidnight,
-                TargetCount     = @TargetCount,
-                ColorHex        = @ColorHex,
-                DisplayOrder    = @DisplayOrder
-            WHERE Id = @Id;
-            """;
+    private const string UpdateSql = """
+        UPDATE ShiftDefinition SET
+            Name            = @Name,
+            StartTime       = @StartTime,
+            EndTime         = @EndTime,
+            CrossesMidnight = @CrossesMidnight,
+            TargetCount     = @TargetCount,
+            ColorHex        = @ColorHex,
+            DisplayOrder    = @DisplayOrder
+        WHERE Id = @Id;
+        """;
 
-        await using var conn = _factory.OpenWrite();
-        await conn.ExecuteAsync(new CommandDefinition(
-            sql,
-            new
-            {
-                definition.Id,
-                definition.Name,
-                StartTime = definition.StartTime.ToString("HH:mm"),
-                EndTime = definition.EndTime.ToString("HH:mm"),
-                CrossesMidnight = definition.CrossesMidnight ? 1 : 0,
-                definition.TargetCount,
-                definition.ColorHex,
-                definition.DisplayOrder,
-            },
-            cancellationToken: cancellationToken));
-    }
+    private const string SoftDeleteSql = """
+        UPDATE ShiftDefinition SET EffectiveTo = @effectiveTo WHERE Id = @id;
+        """;
 
     /// <inheritdoc/>
     public async Task<int> InsertShiftDefinitionAsync(
@@ -97,53 +90,80 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
     {
         ArgumentNullException.ThrowIfNull(definition);
 
-        const string sql = """
-            INSERT INTO ShiftDefinition
-                (Code, Name, StartTime, EndTime, CrossesMidnight,
-                 TargetCount, ColorHex, DisplayOrder,
-                 EffectiveFrom, EffectiveTo, CreatedAt)
-            VALUES
-                (@Code, @Name, @StartTime, @EndTime, @CrossesMidnight,
-                 @TargetCount, @ColorHex, @DisplayOrder,
-                 @EffectiveFrom, @EffectiveTo, @CreatedAt);
-            SELECT last_insert_rowid();
-            """;
-
         await using var conn = _factory.OpenWrite();
         var newId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
-            sql,
-            new
-            {
-                definition.Code,
-                definition.Name,
-                StartTime = definition.StartTime.ToString("HH:mm"),
-                EndTime = definition.EndTime.ToString("HH:mm"),
-                CrossesMidnight = definition.CrossesMidnight ? 1 : 0,
-                definition.TargetCount,
-                definition.ColorHex,
-                definition.DisplayOrder,
-                EffectiveFrom = definition.EffectiveFrom.ToString("yyyy-MM-dd"),
-                EffectiveTo = definition.EffectiveTo?.ToString("yyyy-MM-dd"),
-                CreatedAt = definition.CreatedAt.ToString("O"),
-            },
-            cancellationToken: cancellationToken));
+            InsertSql, ToInsertParameters(definition), cancellationToken: cancellationToken));
         return (int)newId;
     }
 
     /// <inheritdoc/>
-    public async Task SoftDeleteShiftDefinitionAsync(
-        int id, DateOnly effectiveTo, CancellationToken cancellationToken)
+    public async Task SaveChangesAsync(
+        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken)
     {
-        const string sql = """
-            UPDATE ShiftDefinition SET EffectiveTo = @effectiveTo WHERE Id = @id;
-            """;
+        ArgumentNullException.ThrowIfNull(changes);
 
         await using var conn = _factory.OpenWrite();
-        await conn.ExecuteAsync(new CommandDefinition(
-            sql,
-            new { id, effectiveTo = effectiveTo.ToString("yyyy-MM-dd") },
-            cancellationToken: cancellationToken));
+        await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)
+            await conn.BeginTransactionAsync(cancellationToken);
+        try
+        {
+            foreach (var id in changes.DeletedIds)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    SoftDeleteSql,
+                    new { id, effectiveTo = deletedLastEffectiveDay.ToString("yyyy-MM-dd") },
+                    transaction: tx,
+                    cancellationToken: cancellationToken));
+            }
+
+            foreach (var definition in changes.Added)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    InsertSql, ToInsertParameters(definition), transaction: tx, cancellationToken: cancellationToken));
+            }
+
+            foreach (var definition in changes.Updated)
+            {
+                await conn.ExecuteAsync(new CommandDefinition(
+                    UpdateSql,
+                    new
+                    {
+                        definition.Id,
+                        definition.Name,
+                        StartTime = definition.StartTime.ToString("HH:mm"),
+                        EndTime = definition.EndTime.ToString("HH:mm"),
+                        CrossesMidnight = definition.CrossesMidnight ? 1 : 0,
+                        definition.TargetCount,
+                        definition.ColorHex,
+                        definition.DisplayOrder,
+                    },
+                    transaction: tx,
+                    cancellationToken: cancellationToken));
+            }
+
+            await tx.CommitAsync(cancellationToken);
+        }
+        catch
+        {
+            await tx.RollbackAsync(CancellationToken.None);
+            throw;
+        }
     }
+
+    private static object ToInsertParameters(ShiftDefinition definition) => new
+    {
+        definition.Code,
+        definition.Name,
+        StartTime = definition.StartTime.ToString("HH:mm"),
+        EndTime = definition.EndTime.ToString("HH:mm"),
+        CrossesMidnight = definition.CrossesMidnight ? 1 : 0,
+        definition.TargetCount,
+        definition.ColorHex,
+        definition.DisplayOrder,
+        EffectiveFrom = definition.EffectiveFrom.ToString("yyyy-MM-dd"),
+        EffectiveTo = definition.EffectiveTo?.ToString("yyyy-MM-dd"),
+        CreatedAt = definition.CreatedAt.ToString("O"),
+    };
 
     // SQLite 把所有 INTEGER 都视作 64 位,这里映射 DTO 后再 cast 回 int。
     private sealed record ShiftRow(

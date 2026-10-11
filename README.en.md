@@ -36,7 +36,7 @@ A general-purpose production statistics dashboard for discrete-manufacturing lin
 - **Optional PLC handshake mode**: rising-edge detection with debounce by default. Switch to Handshake mode for zero missed counts and crash-safe re-entry (requires one extra DWORD sequence counter on the PLC side)
 - **Resume after power loss**: after an industrial-PC power cut, the current shift's running total is restored from SQLite with no data loss
 - **Automatic Excel export at end of shift**: each shift produces `Data/Exports/{year}/{date}_{shift}.xlsx`
-- **Yearly archiving**: at year rollover, the previous year is exported to `Data/Archives/{year}.xlsx` and purged from the main database
+- **Yearly archiving**: at year rollover, the previous year is exported to `Data/Archives/{year}.xlsx`, a full database backup is taken, and the year is purged from the main database; archive files are never overwritten
 - **Watchdog self-recovery**: a UI deadlock or crash is detected within 60 seconds, and the process is killed and restarted
 - **Fits any screen**: the UI is designed at 1920×1080 and scales proportionally with the window, so it displays in full from 1280×720 up to 4K
 - **Audit trail**: shift changes, PLC state changes and configuration changes are all written to the AuditLog table
@@ -195,7 +195,7 @@ Capacity estimate (1 part per second, full year):
 - ProductionMinute: ~500,000 rows, about **30 MB**
 - ShiftSummary: ~1,500 rows (2 shifts × 365 days × ~2 teams)
 
-At year rollover, data is archived to `Data/Archives/{year}.xlsx` and removed from the main database.
+At year rollover, data is archived to `Data/Archives/{year}.xlsx`, a full database backup `pre-purge-{year}.db` is taken, and the data is removed from the main database. If the same year is archived again (for example, after more data for it arrived), the new files get a timestamp suffix instead of overwriting the earlier archive.
 
 ---
 
@@ -208,7 +208,7 @@ Any shift pattern is supported, for example:
 - Single shift: 08:00 → 17:00
 - Two shifts: 08:00–20:00 + 20:00–08:00 (default)
 - Three shifts: 00:00–08:00 + 08:00–16:00 + 16:00–24:00
-- Four-team three-shift rotation or anything custom, as long as the 24 hours are covered with no gaps or overlaps
+- Four-team three-shift rotation or anything custom. Shifts must not overlap (saving is blocked); gaps are allowed (for example, a single-shift line that is idle at night), and output during a gap is not credited to any shift
 
 **Cross-midnight rule**: a night shift from 20:00 to 08:00 the next day is attributed to its **end date** by default (`Shift.AttributionRule = EndDate`). So "today's night shift" means the one that ended this morning, which matches how shop-floor staff usually talk about it.
 
@@ -222,17 +222,18 @@ Any shift pattern is supported, for example:
 dotnet test
 ```
 
-All **202 tests pass**. Main coverage:
+All **257 tests pass**. Main coverage:
 
 | Module | Coverage |
 |---|---|
-| ShiftCalculator / ShiftDefinition | same-day / cross-midnight / 1–N shifts / attribution rules / shift length / edge cases |
+| ShiftCalculator / ShiftDefinition / ShiftCoverage | same-day / cross-midnight / 1–N shifts / attribution rules / shift length / edge cases / minute-by-minute coverage check (gaps, overlaps) |
 | ProductionPeriods / target rules | "this hour" at the local full hour (incl. half-hour time zones) / weeks start on Monday / month and year rollover / week, month and year targets |
-| CountingService / MinuteAggregator / shift settlement | signal subscription / shift change / team attribution after a swap / per-minute rollup / Excel export |
+| CountingService / MinuteAggregator / shift settlement | attribution by signal timestamp / shift change / team attribution after a swap / per-minute rollup with catch-up / Excel export |
 | TeamAssignment / AuthService | team assignment and swaps / leader login / idle timeout / lockout |
-| Repository integration | CRUD + time windows + peak hour for each repository (real SQLite) |
-| S7Address / HandshakeDecoder | S7 address parsing / sequence wrap-around / crash re-entry |
-| ViewModel presentation logic | trend text / bar normalization / leader detection / shift editor helpers |
+| Repository integration / yearly archive | CRUD + time windows + peak hour for each repository / transactional shift-config save / purge safeguards, never overwriting an earlier archive (real SQLite) |
+| S7Address / HandshakeDecoder / ReconnectBackoff | S7 address parsing / sequence wrap-around / crash re-entry / counter reset / reconnect backoff |
+| ViewModel presentation logic / UI scaling | trend text / bar normalization / leader detection / shift editor helpers / proportional scaling from 1920×1080 |
+| AlertThrottle | alert throttling: first report passes, repeats within the interval are suppressed, only one concurrent caller passes |
 | Layering rules (LayeringTests) | Core has no WPF / database / PLC dependency; ViewModels never call repositories |
 
 ---

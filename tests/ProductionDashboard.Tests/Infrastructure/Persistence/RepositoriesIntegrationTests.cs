@@ -258,20 +258,31 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         peak.Should().Be(0);
     }
 
+    private Task InsertEventsAsync(DateTime minuteUtc, DateOnly shiftDate, int shiftDefId, int teamId, int count) =>
+        _events.InsertEventsAsync(
+            Enumerable.Range(0, count)
+                .Select(i => new ProductionEvent(0, minuteUtc.AddMilliseconds(i * 500), shiftDate, shiftDefId, teamId))
+                .ToList(),
+            CancellationToken.None);
+
     /// <summary>
-    /// UpsertMinuteAggregate 应当对相同 MinuteStart 主键做 ON CONFLICT 更新,
-    /// 同一分钟桶只保留一行,Count 取最新值。
+    /// 分钟聚合按原始事件重算:同一分钟重复计算只保留一行,Count 始终等于该分钟的事件数(含后来补进的事件)。
     /// </summary>
     [Fact]
-    public async Task UpsertMinuteAggregate_inserts_and_then_updates()
+    public async Task RebuildMinuteAggregates_counts_events_per_minute_and_is_repeatable()
     {
         var minute = new DateTime(2026, 5, 19, 10, 5, 0, DateTimeKind.Utc);
         var d = new DateOnly(2026, 5, 19);
+        var window = (from: minute, to: minute.AddMinutes(1));
 
-        await _events.UpsertMinuteAggregateAsync(minute, d, 1, 1, 30, CancellationToken.None);
-        await _events.UpsertMinuteAggregateAsync(minute, d, 1, 1, 42, CancellationToken.None);
+        await InsertEventsAsync(minute, d, 1, 1, 30);
+        (await _events.RebuildMinuteAggregatesAsync(window.from, window.to, CancellationToken.None)).Should().Be(1);
 
-        // 验证只有一行,Count 是更新后的值
+        // 聚合之后又有 12 个事件晚落库,再算一次
+        await InsertEventsAsync(minute.AddSeconds(20), d, 1, 1, 12);
+        await _events.RebuildMinuteAggregatesAsync(window.from, window.to, CancellationToken.None);
+
+        // 验证只有一行,Count 是重算后的值
         await using var conn = ((SqliteConnectionFactory)_factory!).OpenRead();
         var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Count FROM ProductionMinute WHERE MinuteStart = @m";
@@ -284,6 +295,15 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         rowCountCmd.Parameters.AddWithValue("@m", minute.ToString("O"));
         var rowCount = (long)(await rowCountCmd.ExecuteScalarAsync())!;
         rowCount.Should().Be(1, "ON CONFLICT 应该只保留一行");
+
+        (await _events.GetLatestAggregatedMinuteAsync(CancellationToken.None)).Should().Be(minute);
+    }
+
+    /// <summary>还没有任何分钟聚合时,最新聚合分钟为 null。</summary>
+    [Fact]
+    public async Task GetLatestAggregatedMinute_is_null_when_nothing_aggregated()
+    {
+        (await _events.GetLatestAggregatedMinuteAsync(CancellationToken.None)).Should().BeNull();
     }
 
     /// <summary>
@@ -298,12 +318,13 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         var t = new TimeOnly(8, 0);
 
         // d1 班次1/班组1:30 + 20;d2 班次2/班组2:15
-        await _events.UpsertMinuteAggregateAsync(
-            d1.ToDateTime(t).ToUniversalTime(), d1, 1, 1, 30, CancellationToken.None);
-        await _events.UpsertMinuteAggregateAsync(
-            d1.ToDateTime(t.AddMinutes(1)).ToUniversalTime(), d1, 1, 1, 20, CancellationToken.None);
-        await _events.UpsertMinuteAggregateAsync(
-            d2.ToDateTime(t).ToUniversalTime(), d2, 2, 2, 15, CancellationToken.None);
+        await InsertEventsAsync(d1.ToDateTime(t).ToUniversalTime(), d1, 1, 1, 30);
+        await InsertEventsAsync(d1.ToDateTime(t.AddMinutes(1)).ToUniversalTime(), d1, 1, 1, 20);
+        await InsertEventsAsync(d2.ToDateTime(t).ToUniversalTime(), d2, 2, 2, 15);
+        await _events.RebuildMinuteAggregatesAsync(
+            d1.ToDateTime(TimeOnly.MinValue).ToUniversalTime(),
+            d2.AddDays(1).ToDateTime(TimeOnly.MinValue).ToUniversalTime(),
+            CancellationToken.None);
 
         // 全范围 = 65
         (await _analytics.CountEventsByShiftDateRangeAsync(d1, d2, null, CancellationToken.None))
@@ -347,5 +368,44 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         loaded!.StartTime.Should().Be(new TimeOnly(23, 30));
         loaded.EndTime.Should().Be(new TimeOnly(7, 15));
         loaded.CrossesMidnight.Should().BeTrue();
+    }
+
+    /// <summary>软删除写入"最后生效日",该日之后的查询不再返回它,之前的查询仍然返回(历史可追溯)。</summary>
+    [Fact]
+    public async Task SaveChanges_soft_delete_stops_shift_after_last_effective_day()
+    {
+        var today = new DateOnly(2026, 10, 11);
+
+        await _shiftDefs.SaveChangesAsync(
+            new ShiftDefinitionChanges(DeletedIds: [2], Added: [], Updated: []),
+            deletedLastEffectiveDay: today.AddDays(-1),
+            CancellationToken.None);
+
+        (await _shiftDefs.GetActiveShiftDefinitionsAsync(today, CancellationToken.None))
+            .Select(s => s.Code).Should().Equal("A");
+        (await _shiftDefs.GetActiveShiftDefinitionsAsync(today.AddDays(-1), CancellationToken.None))
+            .Select(s => s.Code).Should().Equal("A", "B");
+    }
+
+    /// <summary>任何一步失败时整体回滚:删除、新增都不生效,重试不会重复新增。</summary>
+    [Fact]
+    public async Task SaveChanges_rolls_back_everything_when_one_step_fails()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var added = new ShiftDefinition(
+            0, "C", "中班", new TimeOnly(16, 0), new TimeOnly(0, 0), true, 800, "#00ff88", 3,
+            today, null, DateTime.UtcNow);
+        var broken = (await _shiftDefs.GetShiftDefinitionAsync(1, CancellationToken.None))!
+            with { ColorHex = null! };   // 违反 NOT NULL,模拟保存中途失败
+
+        var save = () => _shiftDefs.SaveChangesAsync(
+            new ShiftDefinitionChanges(DeletedIds: [2], Added: [added], Updated: [broken]),
+            today.AddDays(-1),
+            CancellationToken.None);
+
+        await save.Should().ThrowAsync<Exception>();
+
+        var active = await _shiftDefs.GetActiveShiftDefinitionsAsync(today, CancellationToken.None);
+        active.Select(s => s.Code).Should().Equal(["A", "B"], "删除和新增都应随失败一起回滚");
     }
 }

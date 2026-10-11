@@ -18,8 +18,16 @@ namespace ProductionDashboard.Tests.Infrastructure.Maintenance;
 /// </summary>
 public sealed class YearlyArchiveTests : IAsyncLifetime
 {
-    private readonly string _dbPath = Path.Combine(
-        Path.GetTempPath(), $"pdya_{Guid.NewGuid():N}.db");
+    // 每个测试独立目录:归档 / 备份文件写在数据库同级的 Archives/ 下,互不干扰
+    private readonly string _dataDir = Path.Combine(Path.GetTempPath(), $"pdya_{Guid.NewGuid():N}");
+    private readonly string _dbPath;
+
+    public YearlyArchiveTests()
+    {
+        _dbPath = Path.Combine(_dataDir, "production.db");
+    }
+
+    private string ArchiveDir => Path.Combine(_dataDir, "Archives");
 
     private SqliteConnectionFactory _factory = null!;
     private ShiftSummaryRepository _summaries = null!;
@@ -28,6 +36,7 @@ public sealed class YearlyArchiveTests : IAsyncLifetime
 
     public async Task InitializeAsync()
     {
+        Directory.CreateDirectory(_dataDir);
         var options = Options.Create(new DatabaseOptions
         {
             Path = _dbPath,
@@ -49,20 +58,7 @@ public sealed class YearlyArchiveTests : IAsyncLifetime
         try
         {
             Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
-            foreach (var ext in new[] { "", "-shm", "-wal" })
-            {
-                var p = _dbPath + ext;
-                if (File.Exists(p)) File.Delete(p);
-            }
-            // 清理 ArchiveYearAsync 生成的整库备份目录
-            var archiveDir = Path.Combine(Path.GetDirectoryName(_dbPath)!, "Archives");
-            if (Directory.Exists(archiveDir))
-            {
-                foreach (var f in Directory.GetFiles(archiveDir, "pre-purge-*.db"))
-                {
-                    try { File.Delete(f); } catch { /* 尽力清理 */ }
-                }
-            }
+            if (Directory.Exists(_dataDir)) Directory.Delete(_dataDir, recursive: true);
         }
         catch { /* 清理失败不影响断言 */ }
         return Task.CompletedTask;
@@ -141,8 +137,7 @@ public sealed class YearlyArchiveTests : IAsyncLifetime
         remaining.Should().BeEmpty("归档成功后该年数据应已从主库清除");
 
         // 2) 清库前的整库热备份存在且非空(双保险)
-        var backupPath = Path.Combine(
-            Path.GetDirectoryName(_dbPath)!, "Archives", "pre-purge-2025.db");
+        var backupPath = Path.Combine(ArchiveDir, "pre-purge-2025.db");
         File.Exists(backupPath).Should().BeTrue("清库前必须生成整库热备份");
         new FileInfo(backupPath).Length.Should().BeGreaterThan(0, "备份文件不能为空");
 
@@ -151,6 +146,31 @@ public sealed class YearlyArchiveTests : IAsyncLifetime
         await act.Should().NotThrowAsync("重复归档已清空年份应幂等");
 
         File.Delete(excelPath);
+    }
+
+    // ── T3:同一年再次归档 → 另存新备份,不覆盖第一次的 ───────────────
+
+    [Fact]
+    public async Task Archiving_the_same_year_again_never_overwrites_the_earlier_backup()
+    {
+        var excelPath = Path.Combine(_dataDir, "year.xlsx");
+        var sut = MakeSut(_ =>
+        {
+            File.WriteAllText(excelPath, "archive");
+            return excelPath;
+        });
+
+        await SeedYearAsync(2025);
+        await sut.ArchiveYearAsync(2025, CancellationToken.None);
+        var first = Path.Combine(ArchiveDir, "pre-purge-2025.db");
+        var firstBytes = await File.ReadAllBytesAsync(first);
+
+        // 之后又补进了 2025 年的数据(例如上次清库被中断后残留),再次归档
+        await SeedYearAsync(2025);
+        await sut.ArchiveYearAsync(2025, CancellationToken.None);
+
+        Directory.GetFiles(ArchiveDir, "pre-purge-2025*.db").Should().HaveCount(2, "第二次归档应另存新备份");
+        (await File.ReadAllBytesAsync(first)).Should().Equal(firstBytes, "第一次的备份必须原样保留");
     }
 
     // ── stubs ──────────────────────────────────────────────────────────

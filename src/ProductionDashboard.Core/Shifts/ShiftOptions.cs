@@ -18,7 +18,10 @@ public sealed class ShiftOptions
     /// </summary>
     public ShiftAttributionRule AttributionRule { get; init; } = ShiftAttributionRule.EndDate;
 
-    /// <summary>班次切换检测周期 (ms)。30 秒 = 边界感知最多滞后 30 秒,足够生产统计。</summary>
+    /// <summary>
+    /// 班次切换检测周期 (ms),决定界面多快切换到新班次(清零 Hero 大数字、高亮新班次卡片)。
+    /// 产量本身按信号的时间戳归属班次,不受这个周期影响。
+    /// </summary>
     [Range(1000, 600_000)]
-    public int CheckIntervalMs { get; init; } = 30_000;
+    public int CheckIntervalMs { get; init; } = 1000;
 }

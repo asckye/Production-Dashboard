@@ -72,10 +72,13 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     /// <summary>「单班 / 两班倒 / 三班倒 / 四班三运转」内置模板,一键应用替换当前班次集。</summary>
     public IReadOnlyList<ShiftTemplate> Templates { get; }
 
-    /// <summary>覆盖检测的人类可读提示("覆盖完整 24 小时" / "空缺 X 小时" / "重叠 X 分")。</summary>
+    /// <summary>覆盖检测的人类可读提示("覆盖完整 24 小时" / "有 X 时 Y 分不属于任何班次" / "班次 A 与 B 重叠")。</summary>
     [ObservableProperty] public partial string CoverageHint { get; set; } = "";
 
-    /// <summary>覆盖是否合法(true = 整 24 小时无空档无重叠)。Save 按钮可根据此禁用。</summary>
+    /// <summary>
+    /// 覆盖是否完整(true = 整 24 小时无空档无重叠),界面据此把提示显示为绿色或警告色。
+    /// 有空档仍可保存(单班制产线夜里本来就不生产);有重叠或时间格式错误时 <see cref="Validate"/> 会阻止保存。
+    /// </summary>
     [ObservableProperty] public partial bool IsCoverageValid { get; set; }
 
     /// <summary>NOW 红线在时间轴上的左偏(0-100 百分比)。每秒由 timer 刷新。</summary>
@@ -339,70 +342,77 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     private void UpdateCoverageHint()
     {
         var live = Editables.Where(e => !e.IsDeleted).ToList();
-        var totalMin = 0;
-        var hasInvalid = false;
-        var totalTarget = 0;
-        foreach (var s in live)
-        {
-            totalTarget += s.TargetCount;
-            if (!TryParseTime(s.StartTime, out var start) || !TryParseTime(s.EndTime, out var end))
-            {
-                hasInvalid = true;
-                continue;
-            }
-            totalMin += ComputeDurationMinutes(start, end);
-        }
+        CoverageSummary = $"共 {live.Count} 个班次 · 总目标 {live.Sum(s => s.TargetCount):N0} 件/天";
 
-        if (hasInvalid)
+        var coverage = AnalyzeCoverage(live);
+        if (coverage is null)
         {
-            CoverageHint = "有时间格式不合法";
+            CoverageHint = "有时间格式不合法(需 HH:mm,如 08:00)";
             IsCoverageValid = false;
         }
-        else if (totalMin == 24 * 60)
+        else if (coverage.FirstOverlap is { } overlap)
         {
-            CoverageHint = $"覆盖完整 24 小时 · 无重叠 · 无空档";
-            IsCoverageValid = true;
+            CoverageHint = $"班次 {overlap.First} 与 {overlap.Second} 时段重叠"
+                + $"(共 {FormatMinutes(coverage.OverlapMinutes)}),请调整后再保存";
+            IsCoverageValid = false;
         }
-        else if (totalMin < 24 * 60)
+        else if (coverage.GapMinutes > 0)
         {
-            CoverageHint = $"未覆盖 24 小时(空缺 {(24 * 60 - totalMin) / 60} 时 {(24 * 60 - totalMin) % 60} 分)";
+            CoverageHint = $"有 {FormatMinutes(coverage.GapMinutes)}不属于任何班次,这段时间的产量不会计入";
             IsCoverageValid = false;
         }
         else
         {
-            CoverageHint = $"班次时段重叠(累计 {totalMin / 60} 时 {totalMin % 60} 分)";
-            IsCoverageValid = false;
+            CoverageHint = "覆盖完整 24 小时 · 无重叠 · 无空档";
+            IsCoverageValid = true;
         }
-
-        CoverageSummary = $"共 {live.Count} 个班次 · 总目标 {totalTarget:N0} 件/天";
     }
 
-    private static bool TryParseTime(string s, out TimeOnly t)
-        => TimeOnly.TryParseExact(s, "HH:mm", out t);
+    /// <summary>分析班次覆盖;有时间格式不合法的班次时返回 null。</summary>
+    private static ShiftCoverageResult? AnalyzeCoverage(IReadOnlyList<EditableShift> live)
+    {
+        var parsed = new List<(string Code, TimeOnly Start, TimeOnly End)>(live.Count);
+        foreach (var s in live)
+        {
+            if (!TryParseTime(s.StartTime, out var start) || !TryParseTime(s.EndTime, out var end)) return null;
+            parsed.Add((s.Code, start, end));
+        }
+        return ShiftCoverage.Analyze(parsed);
+    }
+
+    private static string FormatMinutes(int minutes) => $"{minutes / 60} 时 {minutes % 60} 分";
+
+    /// <summary>
+    /// 解析界面上输入的时刻 "HH:mm"。另外接受 "24:00"(表示当天结束,等同次日 00:00),
+    /// 方便填写 16:00–24:00 这样的班次。
+    /// </summary>
+    public static bool TryParseTime(string? text, out TimeOnly time)
+    {
+        if (string.Equals(text?.Trim(), "24:00", StringComparison.Ordinal))
+        {
+            time = TimeOnly.MinValue;
+            return true;
+        }
+        return TimeOnly.TryParseExact(text?.Trim(), "HH:mm", out time);
+    }
 
     /// <summary>计算 start → end 跨过的分钟数(允许跨 0 点)。EditableShift.DurationLabel 也用此方法。</summary>
-    public static int ComputeDurationMinutes(TimeOnly start, TimeOnly end)
-    {
-        var startMin = start.Hour * 60 + start.Minute;
-        var endMin = end.Hour * 60 + end.Minute;
-        var diff = endMin - startMin;
-        if (diff <= 0) diff += 24 * 60;
-        return diff;
-    }
+    public static int ComputeDurationMinutes(TimeOnly start, TimeOnly end) => ShiftCoverage.DurationMinutes(start, end);
 
     // ── 保存 ──────────────────────────────────────────────────────
 
     /// <summary>
-    /// 保存所有 dirty / deleted 的班次定义。校验失败时显示 toast 并返回 false。
-    /// 成功后内部调用 ShiftManager.RefreshAsync 让运行中的服务感知最新班次。
+    /// 保存前校验:时间格式、名称、目标产量、时段重叠。发现问题时显示 toast 并返回 false。
+    /// 空档允许保存(单班制产线夜里本来就不生产),界面上的覆盖提示会说明。
     /// </summary>
-    public async Task<bool> SaveAsync(CancellationToken cancellationToken)
+    public bool Validate()
     {
-        foreach (var es in Editables.Where(e => !e.IsDeleted))
+        var live = Editables.Where(e => !e.IsDeleted).ToList();
+        foreach (var es in live)
         {
             if (!TryParseTime(es.StartTime, out _) || !TryParseTime(es.EndTime, out _))
             {
-                _toast.ShowWarning($"班次 [{es.Code}] 时间格式不合法,需 HH:mm");
+                _toast.ShowWarning($"班次 [{es.Code}] 时间格式不合法,需 HH:mm(00:00–24:00)");
                 return false;
             }
             if (es.TargetCount < 0)
@@ -416,6 +426,25 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
                 return false;
             }
         }
+
+        if (AnalyzeCoverage(live)?.FirstOverlap is { } overlap)
+        {
+            _toast.ShowWarning(
+                $"班次 [{overlap.First}] 与 [{overlap.Second}] 从 {overlap.At:HH:mm} 起时段重叠,"
+                + "重叠部分只会算给排在前面的班次,请调整后再保存");
+            return false;
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// 保存所有 dirty / deleted 的班次定义(一个事务)。校验失败时显示 toast 并返回 false。
+    /// 成功后内部调用 ShiftManager.RefreshAsync 让运行中的服务感知最新班次;
+    /// 调用方应随后 <see cref="Reload"/>,让新增的班次拿到数据库 Id。
+    /// </summary>
+    public async Task<bool> SaveAsync(CancellationToken cancellationToken)
+    {
+        if (!Validate()) return false;
 
         var changes = new ShiftDefinitionChanges(
             DeletedIds: Editables.Where(e => e.IsDeleted && e.Id > 0).Select(e => e.Id).ToList(),
@@ -506,7 +535,7 @@ public sealed partial class EditableShift : ObservableObject
     /// <summary>班次开始时刻 "HH:mm"。</summary>
     [ObservableProperty] public partial string StartTime { get; set; } = "00:00";
 
-    /// <summary>班次结束时刻 "HH:mm"。若 EndTime ≤ StartTime 视为跨日班次。</summary>
+    /// <summary>班次结束时刻 "HH:mm"(也可填 "24:00")。若 EndTime ≤ StartTime 视为跨日班次。</summary>
     [ObservableProperty] public partial string EndTime { get; set; } = "00:00";
 
     /// <summary>本班次的目标产量(件)。Save 时落到 ShiftDefinition.TargetCount。</summary>
@@ -520,8 +549,8 @@ public sealed partial class EditableShift : ObservableObject
     {
         get
         {
-            if (!TimeOnly.TryParseExact(StartTime, "HH:mm", out var s)) return false;
-            if (!TimeOnly.TryParseExact(EndTime, "HH:mm", out var e)) return false;
+            if (!ShiftDefinitionEditor.TryParseTime(StartTime, out var s)) return false;
+            if (!ShiftDefinitionEditor.TryParseTime(EndTime, out var e)) return false;
             return s >= e;
         }
     }
@@ -531,8 +560,8 @@ public sealed partial class EditableShift : ObservableObject
     {
         get
         {
-            if (!TimeOnly.TryParseExact(StartTime, "HH:mm", out var s)) return "--";
-            if (!TimeOnly.TryParseExact(EndTime, "HH:mm", out var e)) return "--";
+            if (!ShiftDefinitionEditor.TryParseTime(StartTime, out var s)) return "--";
+            if (!ShiftDefinitionEditor.TryParseTime(EndTime, out var e)) return "--";
             var mins = ShiftDefinitionEditor.ComputeDurationMinutes(s, e);
             return $"{mins / 60} 小时 {mins % 60} 分";
         }

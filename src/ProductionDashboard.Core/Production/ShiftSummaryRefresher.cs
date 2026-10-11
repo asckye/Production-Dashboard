@@ -17,8 +17,7 @@ public interface IShiftSummaryRefresher
 /// <inheritdoc cref="IShiftSummaryRefresher"/>
 public sealed class ShiftSummaryRefresher : IShiftSummaryRefresher
 {
-    private const long ReportThrottleMs = 30_000;
-    private long _lastReportTick = long.MinValue;
+    private readonly AlertThrottle _alerts = new(TimeSpan.FromSeconds(30));
 
     private readonly IShiftManager _shifts;
     private readonly ICountingService _counter;
@@ -73,16 +72,7 @@ public sealed class ShiftSummaryRefresher : IShiftSummaryRefresher
         catch (Exception ex)
         {
             _logger.LogError(ex, "刷新班次汇总(按班组分行)失败");
-            ReportThrottled(ex);
+            if (_alerts.ShouldReport()) _exceptionHandler.Report(ex, "Aggregation.Summary");
         }
-    }
-
-    private void ReportThrottled(Exception ex)
-    {
-        var now = Environment.TickCount64;
-        var prev = Interlocked.Read(ref _lastReportTick);
-        if (now - prev < ReportThrottleMs) return;
-        if (Interlocked.CompareExchange(ref _lastReportTick, now, prev) != prev) return;
-        _exceptionHandler.Report(ex, "Aggregation.Summary");
     }
 }

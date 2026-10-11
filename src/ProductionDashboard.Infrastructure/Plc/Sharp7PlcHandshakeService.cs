@@ -146,29 +146,27 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
     private async Task PollLoopAsync(CancellationToken ct)
     {
         var pollDelay = TimeSpan.FromMilliseconds(_options.PollIntervalMs);
-        var reconnectMs = 1000;
+        var backoff = new ReconnectBackoff(TimeSpan.FromMilliseconds(_options.ReconnectMaxDelayMs));
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                if (!_connected)
+                if (!_connected && !TryConnect())
                 {
-                    if (!TryConnect())
-                    {
-                        await Task.Delay(reconnectMs, ct).ConfigureAwait(false);
-                        reconnectMs = Math.Min(reconnectMs * 2, _options.ReconnectMaxDelayMs);
-                        continue;
-                    }
-                    reconnectMs = 1000;
+                    await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
+                    continue;
                 }
 
                 if (!TryHandshakeOnce())
                 {
+                    // 读失败:断开,同样等待退避间隔后再重连(不能立刻重连,见 ReconnectBackoff)
                     Disconnect();
+                    await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
                     continue;
                 }
 
+                backoff.Reset();
                 MaybeWriteHeartbeat();
 
                 await Task.Delay(pollDelay, ct).ConfigureAwait(false);
@@ -181,8 +179,7 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
             {
                 _logger.LogError(ex, "PLC 握手轮询异常,将断开重连");
                 Disconnect();
-                await Task.Delay(reconnectMs, ct).ConfigureAwait(false);
-                reconnectMs = Math.Min(reconnectMs * 2, _options.ReconnectMaxDelayMs);
+                await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
             }
         }
     }
@@ -196,10 +193,10 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
             if (rc == 0)
             {
                 _connected = true;
-                // 关键:重连后必须重新对齐 lastSeq,断线期间 PLC 可能累计了多个事件,
-                // 但我们没法补录(也不应该,断线就是断线)。新的 lastSeq = 当前 seq,
-                // 后续从这开始计数。
-                _isFirstRead = true;
+                // 重连后沿用断线前的 lastSeq,不重新对齐:PLC 的序号在断线期间照常累加,
+                // 重连后第一次读就能按序号差把断线期间的件数补上(握手模式"零漏读"靠的就是这一点)。
+                // 只有程序刚启动时(_isFirstRead 初始为 true)才只对齐、不计数。
+                // PLC 重启导致序号归零的情况由 HandshakeDecoder 识别并重新对齐。
                 _logger.LogInformation(
                     "PLC 握手连接成功 · {Ip} rack={Rack} slot={Slot}",
                     _options.IpAddress, _options.Rack, _options.Slot);
@@ -266,6 +263,13 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
         // S7.GetDIntAt 返回 int(有符号 32);我们语义上想要无符号 DWORD,直接 cast。
         var seq = unchecked((uint)S7.GetDIntAt(buffer, seqOffset));
 
+        if (!_isFirstRead && bit && HandshakeDecoder.IsCounterReset(seq, _lastSeq))
+        {
+            _logger.LogWarning(
+                "PLC 序号跳变 {Last} → {Seq},超出合理范围,视为 PLC 计数器被复位(重启 / 手动改写),重新对齐,本次不计数",
+                _lastSeq, seq);
+        }
+
         var (delta, shouldClear, newLastSeq) =
             HandshakeDecoder.Decode(bit, seq, _isFirstRead, _lastSeq);
 
@@ -274,6 +278,10 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
             _logger.LogInformation(
                 "PLC 握手首次读对齐 · seq={Seq} bit={Bit}", seq, bit);
             _isFirstRead = false;
+        }
+        else if (delta > 1)
+        {
+            _logger.LogInformation("PLC 握手一次读到 {Delta} 件(轮询间隔内多次完成或断线期间累计)", delta);
         }
 
         for (var i = 0; i < delta; i++)

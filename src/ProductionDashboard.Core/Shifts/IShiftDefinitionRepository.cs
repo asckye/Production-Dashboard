@@ -16,21 +16,18 @@ public interface IShiftDefinitionRepository
     Task<ShiftDefinition?> GetShiftDefinitionAsync(
         int id, CancellationToken cancellationToken);
 
-    /// <summary>
-    /// 更新班次定义 (按 Id)。Code 不允许改动避免破坏外键关联。
-    /// 现场配置界面用这个写回 SQLite。
-    /// </summary>
-    Task UpdateShiftDefinitionAsync(
-        ShiftDefinition definition, CancellationToken cancellationToken);
-
     /// <summary>插入新班次,返回新生成的 Id。</summary>
     Task<int> InsertShiftDefinitionAsync(
         ShiftDefinition definition, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 软删除班次:把 EffectiveTo 设为 <paramref name="effectiveTo"/>。
-    /// 不真删行,保留历史 ShiftSummary / ProductionEvent 的外键有效。
+    /// 在<b>同一个事务</b>里保存一次配置修改:软删除、新增、修改(按 Id,Code 不变以免破坏外键关联)。
+    /// 任何一步失败都整体回滚,不会留下"保存了一半"的状态,重试也不会重复新增。
+    /// <para>
+    /// 软删除不删行,只把 EffectiveTo 设为 <paramref name="deletedLastEffectiveDay"/>(最后生效的一天),
+    /// 历史 ShiftSummary / ProductionEvent 的外键仍然有效。
+    /// </para>
     /// </summary>
-    Task SoftDeleteShiftDefinitionAsync(
-        int id, DateOnly effectiveTo, CancellationToken cancellationToken);
+    Task SaveChangesAsync(
+        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken);
 }

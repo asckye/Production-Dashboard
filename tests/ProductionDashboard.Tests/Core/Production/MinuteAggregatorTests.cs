@@ -3,7 +3,6 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using ProductionDashboard.Core.Diagnostics;
 using ProductionDashboard.Core.Production;
-using ProductionDashboard.Core.Shifts;
 using ProductionDashboard.Infrastructure.Persistence;
 using ProductionDashboard.Infrastructure.Persistence.Repositories;
 using ProductionDashboard.Tests.Helpers;
@@ -11,8 +10,8 @@ using ProductionDashboard.Tests.Helpers;
 namespace ProductionDashboard.Tests.Core.Production;
 
 /// <summary>
-/// MinuteAggregator(从 AggregationHostedService 拆出)的集成测试。覆盖审查指出的零测试盲区:
-/// 上一分钟事件聚合成带 TeamId 的 ProductionMinute 行、无事件不写、空档期不写。
+/// MinuteAggregator 的集成测试(真实 SQLite)。重点是"不留空洞":
+/// 定时器晚到、某次失败、程序重启、事件晚落库之后,分钟表都要和原始事件一致。
 /// </summary>
 public sealed class MinuteAggregatorTests : IAsyncLifetime
 {
@@ -23,10 +22,7 @@ public sealed class MinuteAggregatorTests : IAsyncLifetime
 
     private SqliteConnectionFactory _factory = null!;
     private ProductionEventRepository _events = null!;
-    private ProductionAnalyticsRepository _analytics = null!;
     private ControlledTimeProvider _clock = null!;
-    private DateTime _prevMinute;
-    private DateOnly _shiftDate;
 
     public async Task InitializeAsync()
     {
@@ -42,13 +38,7 @@ public sealed class MinuteAggregatorTests : IAsyncLifetime
         await init.StartAsync(CancellationToken.None);
 
         _events = new ProductionEventRepository(_factory);
-        _analytics = new ProductionAnalyticsRepository(_factory);
         _clock = new ControlledTimeProvider(); // now = 2026-01-01 00:00:00 UTC
-
-        var nowUtc = _clock.GetUtcNow().UtcDateTime;
-        var thisMinute = new DateTime(nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, nowUtc.Minute, 0, DateTimeKind.Utc);
-        _prevMinute = thisMinute.AddMinutes(-1);
-        _shiftDate = DateOnly.FromDateTime(_prevMinute);
     }
 
     public Task DisposeAsync()
@@ -66,106 +56,104 @@ public sealed class MinuteAggregatorTests : IAsyncLifetime
         return Task.CompletedTask;
     }
 
-    private MinuteAggregator MakeSut(ShiftAssignment? shift, int? teamForSlot)
-    {
-        var shifts = new StubShiftManager { ShiftAt = shift };
-        var teams = new StubTeams { TeamForSlot = teamForSlot };
-        return new MinuteAggregator(
-            _events, _analytics, shifts, teams,
-            new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance),
-            NullLogger<MinuteAggregator>.Instance, _clock);
-    }
+    private DateTime NowUtc => _clock.GetUtcNow().UtcDateTime;
 
-    private ShiftAssignment AShift() => new(
-        new ShiftDefinition(
-            1, "A", "白班", new TimeOnly(8, 0), new TimeOnly(20, 0),
-            false, 1500, "#ff8c42", 1, new DateOnly(1970, 1, 1), null, DateTime.UtcNow),
-        _shiftDate,
-        _shiftDate.ToDateTime(new TimeOnly(8, 0)),
-        _shiftDate.ToDateTime(new TimeOnly(20, 0)));
+    private MinuteAggregator MakeSut() => new(
+        _events,
+        new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance),
+        NullLogger<MinuteAggregator>.Instance,
+        _clock);
 
-    private async Task SeedPrevMinuteEventsAsync(int n)
+    private async Task SeedEventsAsync(DateTime minuteUtc, int n)
     {
+        var shiftDate = DateOnly.FromDateTime(minuteUtc);
         var list = Enumerable.Range(0, n)
-            .Select(i => new ProductionEvent(0, _prevMinute.AddSeconds(10 + i), _shiftDate, 1, TeamA))
+            .Select(i => new ProductionEvent(0, minuteUtc.AddSeconds(10 + i), shiftDate, 1, TeamA))
             .ToList();
         await _events.InsertEventsAsync(list, CancellationToken.None);
     }
 
-    private async Task<(long count, long teamId)?> ReadMinuteRowAsync()
+    private async Task<(long Count, long TeamId)?> ReadMinuteAsync(DateTime minuteUtc)
     {
         await using var conn = _factory.OpenRead();
         var cmd = conn.CreateCommand();
         cmd.CommandText = "SELECT Count, TeamId FROM ProductionMinute WHERE MinuteStart = @m";
-        cmd.Parameters.AddWithValue("@m", _prevMinute.ToString("O"));
+        cmd.Parameters.AddWithValue("@m", minuteUtc.ToString("O"));
         await using var reader = await cmd.ExecuteReaderAsync();
         if (!await reader.ReadAsync()) return null;
         return (reader.GetInt64(0), reader.GetInt64(1));
     }
 
     [Fact]
-    public async Task AggregateAsync_writes_minute_bucket_with_team_for_prev_minute()
+    public async Task Writes_previous_minute_with_its_team()
     {
-        await SeedPrevMinuteEventsAsync(3);
-        var sut = MakeSut(AShift(), teamForSlot: TeamA);
+        var prevMinute = NowUtc.AddMinutes(-1);
+        await SeedEventsAsync(prevMinute, 3);
 
-        await sut.AggregateAsync(CancellationToken.None);
+        await MakeSut().AggregateAsync(CancellationToken.None);
 
-        var row = await ReadMinuteRowAsync();
-        row.Should().NotBeNull();
-        row!.Value.count.Should().Be(3);
-        row.Value.teamId.Should().Be(TeamA);
+        (await ReadMinuteAsync(prevMinute)).Should().Be((3L, (long)TeamA));
     }
 
     [Fact]
-    public async Task AggregateAsync_writes_nothing_when_no_events()
+    public async Task Writes_nothing_when_there_are_no_events()
     {
-        var sut = MakeSut(AShift(), teamForSlot: TeamA);
+        await MakeSut().AggregateAsync(CancellationToken.None);
 
-        await sut.AggregateAsync(CancellationToken.None);
-
-        (await ReadMinuteRowAsync()).Should().BeNull("无事件时不应写分钟桶");
+        (await ReadMinuteAsync(NowUtc.AddMinutes(-1))).Should().BeNull("无事件时不应写分钟桶");
     }
 
     [Fact]
-    public async Task AggregateAsync_skips_when_in_gap_no_shift()
+    public async Task Does_not_aggregate_the_minute_that_is_still_in_progress()
     {
-        await SeedPrevMinuteEventsAsync(2);
-        var sut = MakeSut(shift: null, teamForSlot: null); // 空档期
+        await SeedEventsAsync(NowUtc, 2);
+
+        await MakeSut().AggregateAsync(CancellationToken.None);
+
+        (await ReadMinuteAsync(NowUtc)).Should().BeNull("当前分钟还没结束");
+    }
+
+    [Fact]
+    public async Task Minutes_missed_while_the_timer_did_not_run_are_caught_up()
+    {
+        var sut = MakeSut();
+        await sut.AggregateAsync(CancellationToken.None);
+        var start = NowUtc;
+
+        // 定时器 10 分钟没有执行(系统忙 / 某几次失败),期间有生产
+        _clock.Advance(TimeSpan.FromMinutes(10));
+        await SeedEventsAsync(start.AddMinutes(2), 4);
 
         await sut.AggregateAsync(CancellationToken.None);
 
-        (await ReadMinuteRowAsync()).Should().BeNull("空档期的事件不归任何班次,不聚合");
+        (await ReadMinuteAsync(start.AddMinutes(2)))!.Value.Count.Should().Be(4);
     }
 
-    // ── stubs ──────────────────────────────────────────────────────────
-
-    private sealed class StubShiftManager : IShiftManager
+    [Fact]
+    public async Task After_restart_aggregation_resumes_from_the_last_aggregated_minute()
     {
-        public ShiftAssignment? ShiftAt { get; set; }
-        public ShiftAssignment? Current { get; set; }
-        public IReadOnlyList<ShiftDefinition> Definitions { get; set; } = Array.Empty<ShiftDefinition>();
-#pragma warning disable CS0067
-        public event Action<ShiftAssignment?, ShiftAssignment?>? ShiftChanged;
-        public event Action? DefinitionsChanged;
-#pragma warning restore CS0067
-        public ShiftAssignment? GetShiftAt(DateTime localTime) => ShiftAt;
-        public Task RefreshAsync(CancellationToken ct) => Task.CompletedTask;
+        // 上次运行聚合到了 20 分钟前,之后的几分钟在停机前产生了事件但没来得及聚合
+        await SeedEventsAsync(NowUtc.AddMinutes(-20), 1);
+        await _events.RebuildMinuteAggregatesAsync(NowUtc.AddMinutes(-20), NowUtc.AddMinutes(-19), CancellationToken.None);
+        await SeedEventsAsync(NowUtc.AddMinutes(-15), 6);
+
+        await MakeSut().AggregateAsync(CancellationToken.None);   // 新进程的第一次聚合
+
+        (await ReadMinuteAsync(NowUtc.AddMinutes(-15)))!.Value.Count.Should().Be(6);
     }
 
-    private sealed class StubTeams : ITeamAssignmentService
+    [Fact]
+    public async Task Events_persisted_after_their_minute_was_aggregated_are_added_on_the_next_run()
     {
-        public int? TeamForSlot { get; set; }
-        public IReadOnlyList<Team> Teams => Array.Empty<Team>();
-        public IReadOnlyDictionary<int, Team> CurrentAssignments => new Dictionary<int, Team>();
-        public Team? GetTeamForSlot(int shiftDefId)
-            => TeamForSlot is null ? null
-               : new Team(TeamForSlot.Value, $"班{TeamForSlot}", "班长", null, "#fff", TeamForSlot.Value, true, DateTime.UtcNow);
-        public Task RefreshAsync(CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task SwapTwoSlotsAsync(string operatorName, CancellationToken cancellationToken) => Task.CompletedTask;
-        public Task ReassignAsync(int shiftDefId, int teamId, string operatorName, CancellationToken cancellationToken) => Task.CompletedTask;
-#pragma warning disable CS0067
-        public event Action? AssignmentsChanged;
-#pragma warning restore CS0067
+        var sut = MakeSut();
+        var prevMinute = NowUtc.AddMinutes(-1);
+        await SeedEventsAsync(prevMinute, 3);
+        await sut.AggregateAsync(CancellationToken.None);
+
+        await SeedEventsAsync(prevMinute.AddSeconds(30), 2);   // 晚落库
+        _clock.Advance(TimeSpan.FromMinutes(1));
+        await sut.AggregateAsync(CancellationToken.None);
+
+        (await ReadMinuteAsync(prevMinute))!.Value.Count.Should().Be(5);
     }
 }

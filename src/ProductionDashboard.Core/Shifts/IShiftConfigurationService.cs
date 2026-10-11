@@ -7,7 +7,7 @@ namespace ProductionDashboard.Core.Shifts;
 /// </summary>
 public interface IShiftConfigurationService
 {
-    /// <summary>保存班次定义的增、删、改,然后重新加载班次。</summary>
+    /// <summary>在一个事务里保存班次定义的增、删、改,然后重新加载班次。失败时数据库不变,可以直接重试。</summary>
     Task SaveShiftDefinitionsAsync(ShiftDefinitionChanges changes, CancellationToken cancellationToken);
 
     /// <summary>保存班组名称 / 班长的修改,然后重新加载班组分配。</summary>
@@ -15,7 +15,7 @@ public interface IShiftConfigurationService
 }
 
 /// <summary>一次保存涉及的班次定义变更。</summary>
-/// <param name="DeletedIds">要删除的班次 Id(软删除:从今天起不再生效,历史数据保留)。</param>
+/// <param name="DeletedIds">要删除的班次 Id(软删除:保存后立即不再生效,历史数据保留)。</param>
 /// <param name="Added">新增的班次(Id 为 0)。</param>
 /// <param name="Updated">修改过的已有班次。</param>
 public sealed record ShiftDefinitionChanges(

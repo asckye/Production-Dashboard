@@ -34,7 +34,7 @@
 - **PLC 握手模式可选** — 默认上升沿 + 去抖;切到 Handshake 模式后零漏读 + 崩溃可重入(需 PLC 端加 1 个 DWORD 序号字)
 - **断点续传** — 工控机断电重启后从 SQLite 恢复当前班次累计,数据无丢失
 - **班次结束自动导出 Excel** — 每个班次生成 `Data/Exports/{年}/{日期}_{班次}.xlsx`
-- **年度归档** — 跨年自动把上一年数据导出为 `Data/Archives/{年}.xlsx`,主库清空腾出空间
+- **年度归档** — 跨年自动把上一年数据导出为 `Data/Archives/{年}.xlsx`,清库前另做整库备份,主库清空腾出空间;归档文件从不覆盖
 - **看门狗自恢复** — UI 死锁/崩溃 60 秒内识别,杀进程并重启
 - **适配各种屏幕** — 界面按 1920×1080 设计、随窗口等比缩放,从 1280×720 到 4K 都完整显示
 - **审计留痕** — 班次切换 / PLC 状态变化 / 配置变更全部进 AuditLog 表
@@ -193,7 +193,7 @@ AuditLog                    操作留痕
 - ProductionMinute: ~50 万行,约 **30 MB**
 - ShiftSummary: ~1500 行(2 班 × 365 天 × ~2 班组)
 
-跨年自动归档到 `Data/Archives/{年}.xlsx`,主库释放。
+跨年自动归档到 `Data/Archives/{年}.xlsx`,清库前另存整库备份 `pre-purge-{年}.db`,然后释放主库。同一年再次归档时(例如又补进了该年的数据)另存为带时间戳的新文件,不覆盖之前的归档。
 
 ---
 
@@ -206,7 +206,7 @@ AuditLog                    操作留痕
 - 单班制:08:00 → 17:00
 - 两班倒:08:00–20:00 + 20:00–08:00(默认)
 - 三班倒:00:00–08:00 + 08:00–16:00 + 16:00–24:00
-- 四班三运转、自定义,只要 24 小时无空档无重叠即可
+- 四班三运转、自定义。时段不能重叠(保存时会拦下);允许有空档(例如单班制夜里不生产),空档里的产量不计入任何班次
 
 **跨日规则**:夜班 20:00 → 次日 08:00,默认归属「结束日」(`Shift.AttributionRule = EndDate`,这样「今天的夜班数据」就是「今天早上结束那一波」,符合现场口语习惯)。
 
@@ -220,17 +220,18 @@ AuditLog                    操作留痕
 dotnet test
 ```
 
-当前 **202 个测试全部通过**。主要覆盖:
+当前 **257 个测试全部通过**。主要覆盖:
 
 | 模块 | 覆盖范围 |
 |---|---|
-| ShiftCalculator / ShiftDefinition | 同日 / 跨日 / 1-N 班 / 归属规则 / 班次时长 / 边界 |
+| ShiftCalculator / ShiftDefinition / ShiftCoverage | 同日 / 跨日 / 1-N 班 / 归属规则 / 班次时长 / 边界 / 逐分钟覆盖检测(空档、重叠) |
 | ProductionPeriods / 目标换算 | 本小时按本地整点(含非整点时区)/ 周一为周起点 / 跨月跨年 / 周月年目标 |
-| CountingService / MinuteAggregator / 班次结算 | 信号订阅 / 班次切换 / 倒班数据归属 / 分钟聚合 / Excel 导出 |
+| CountingService / MinuteAggregator / 班次结算 | 信号按时间戳归属 / 班次切换 / 倒班数据归属 / 分钟聚合补漏 / Excel 导出 |
 | TeamAssignment / AuthService | 班组分配与倒班 / 班长登录 / 空闲超时 / 失败锁定 |
-| Repository 集成 | 各仓库 CRUD + 时间窗 + 峰值小时(真实 SQLite) |
-| S7Address / HandshakeDecoder | S7 地址解析 / 序号回卷 / 崩溃重入 |
-| ViewModel 展示逻辑 | 趋势文字 / 柱图归一化 / 领先判定 / 班次编辑辅助函数 |
+| Repository 集成 / 年度归档 | 各仓库 CRUD + 时间窗 + 峰值小时 / 班次配置事务保存 / 归档清库保护、不覆盖旧归档(真实 SQLite) |
+| S7Address / HandshakeDecoder / ReconnectBackoff | S7 地址解析 / 序号回卷 / 崩溃重入 / 计数器复位 / 重连退避 |
+| ViewModel 展示逻辑 / 界面缩放 | 趋势文字 / 柱图归一化 / 领先判定 / 班次编辑辅助函数 / 按 1920×1080 等比缩放 |
+| AlertThrottle | 告警限流:首次放行、间隔内抑制、并发只放行一次 |
 | 分层规则(LayeringTests) | Core 不依赖 WPF / 数据库 / PLC;ViewModel 不直接访问仓库 |
 
 ---

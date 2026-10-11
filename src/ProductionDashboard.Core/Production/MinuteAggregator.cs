@@ -1,102 +1,99 @@
 using Microsoft.Extensions.Logging;
 using ProductionDashboard.Core.Diagnostics;
-using ProductionDashboard.Core.Shifts;
 
 namespace ProductionDashboard.Core.Production;
 
 /// <summary>
-/// 把"上一分钟"的原始事件聚合成一行 <c>ProductionMinute</c>(带班组归属)。由调度器每分钟触发。
+/// 把原始事件聚合成分钟级的 <c>ProductionMinute</c> 行(本周 / 本月 / 本年累计都从这里求和)。由调度器每分钟触发。
 /// 从 AggregationHostedService 拆出,独立可测。
 /// </summary>
 public interface IMinuteAggregator
 {
-    /// <summary>聚合上一整分钟 [prevMinute, thisMinute) 的事件。内部已处理异常 + 限流告警。</summary>
+    /// <summary>重算最近几分钟以及上次之后漏掉的分钟。内部已处理异常 + 限流告警。</summary>
     Task AggregateAsync(CancellationToken cancellationToken);
 }
 
 /// <inheritdoc cref="IMinuteAggregator"/>
+/// <remarks>
+/// 不能只聚合"上一分钟":定时器偶尔晚到会跳过某一分钟、某次聚合失败、程序重启、事件在聚合之后才落库,
+/// 都会让分钟表出现空洞或少计,而累计数字是从分钟表求和的。因此每次都重算:
+/// <list type="bullet">
+///   <item>最近 <see cref="Lookback"/> 分钟(补上晚落库的事件)</item>
+///   <item>以及上次成功聚合之后的所有分钟;程序刚启动时从数据库里最后聚合到的那一分钟补起</item>
+/// </list>
+/// 分钟聚合只取决于原始事件,重复计算同一分钟是安全的。
+/// </remarks>
 public sealed class MinuteAggregator : IMinuteAggregator
 {
-    private const long ReportThrottleMs = 30_000;
-    private long _lastReportTick = long.MinValue;
+    /// <summary>每次至少重算最近这么多分钟。</summary>
+    public static readonly TimeSpan Lookback = TimeSpan.FromMinutes(3);
 
     private readonly IProductionEventRepository _events;
-    private readonly IProductionAnalyticsRepository _analytics;
-    private readonly IShiftManager _shifts;
-    private readonly ITeamAssignmentService _teamAssign;
     private readonly IGlobalExceptionHandler _exceptionHandler;
     private readonly ILogger<MinuteAggregator> _logger;
     private readonly TimeProvider _clock;
+    private readonly AlertThrottle _alerts;
 
-    /// <summary>注入仓库 / 班次 / 班组 / 全局异常告警 / 日志。<paramref name="clock"/> 可注入测试时钟。</summary>
+    private DateTime? _aggregatedUpTo;   // 已成功聚合到的位置(UTC 整分钟,不含)
+    private int _running;                // 1 = 上一次还在执行
+
+    /// <summary>注入事件仓库 / 全局异常告警 / 日志。<paramref name="clock"/> 可注入测试时钟。</summary>
     public MinuteAggregator(
         IProductionEventRepository events,
-        IProductionAnalyticsRepository analytics,
-        IShiftManager shifts,
-        ITeamAssignmentService teamAssign,
         IGlobalExceptionHandler exceptionHandler,
         ILogger<MinuteAggregator> logger,
         TimeProvider? clock = null)
     {
         _events = events;
-        _analytics = analytics;
-        _shifts = shifts;
-        _teamAssign = teamAssign;
         _exceptionHandler = exceptionHandler;
         _logger = logger;
         _clock = clock ?? TimeProvider.System;
+        _alerts = new AlertThrottle(TimeSpan.FromSeconds(30), _clock);
     }
 
     /// <inheritdoc/>
     public async Task AggregateAsync(CancellationToken cancellationToken)
     {
-        // 取上一分钟整点为窗口起点 (UTC),例如现在 12:34:17,聚合 [12:33:00, 12:34:00)。
-        var nowUtc = _clock.GetUtcNow().UtcDateTime;
-        var thisMinute = new DateTime(
-            nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, nowUtc.Minute, 0, DateTimeKind.Utc);
-        var prevMinute = thisMinute.AddMinutes(-1);
-        var prevMinuteEnd = thisMinute;
-
+        // 上一次还没跑完(数据库慢)就跳过这次,下一次会覆盖这段时间
+        if (Interlocked.Exchange(ref _running, 1) == 1) return;
         try
         {
-            var count = await _analytics.CountEventsInRangeAsync(prevMinute, prevMinuteEnd, cancellationToken)
-                .ConfigureAwait(false);
-            if (count == 0) return;
+            var nowUtc = _clock.GetUtcNow().UtcDateTime;
+            var thisMinute = new DateTime(
+                nowUtc.Year, nowUtc.Month, nowUtc.Day, nowUtc.Hour, nowUtc.Minute, 0, DateTimeKind.Utc);
+            var from = await GetStartAsync(thisMinute, cancellationToken).ConfigureAwait(false);
 
-            var prevMinuteLocal = prevMinute.ToLocalTime();
-            var shift = _shifts.GetShiftAt(prevMinuteLocal);
-            if (shift is null)
+            var minutes = await _events.RebuildMinuteAggregatesAsync(from, thisMinute, cancellationToken)
+                .ConfigureAwait(false);
+            _aggregatedUpTo = thisMinute;
+
+            if (thisMinute - from > Lookback)
             {
-                _logger.LogWarning(
-                    "分钟聚合发现 {Count} 条事件但落在空档期 {Time:HH:mm},忽略", count, prevMinuteLocal);
-                return;
+                _logger.LogInformation(
+                    "分钟聚合补算 {From:O} – {To:O} · 写入 {Minutes} 分钟", from, thisMinute, minutes);
             }
-
-            // 记录该分钟所属班组(当前槽位分配)。一分钟内正常单班组,倒班跨分钟误差 < 1分钟。
-            var team = _teamAssign.GetTeamForSlot(shift.Definition.Id);
-
-            await _events.UpsertMinuteAggregateAsync(
-                prevMinute, shift.ShiftDate, shift.Definition.Id, team?.Id, count, cancellationToken)
-                .ConfigureAwait(false);
-
-            _logger.LogDebug(
-                "分钟聚合 {Time:HH:mm} · {Count} 件 · {Shift}",
-                prevMinuteLocal, count, shift.Definition.Code);
+            else
+            {
+                _logger.LogDebug("分钟聚合 {From:O} – {To:O} · 写入 {Minutes} 分钟", from, thisMinute, minutes);
+            }
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "分钟聚合失败 · {Time}", prevMinute);
-            // 持续失败会让 ProductionMinute 出现空洞(小时趋势图缺数据),限流告警。
-            ReportThrottled(ex);
+            // 失败时 _aggregatedUpTo 不前进,下一次会把这段时间一起补上
+            _logger.LogError(ex, "分钟聚合失败,下一次会重试这段时间");
+            if (_alerts.ShouldReport()) _exceptionHandler.Report(ex, "Aggregation.Minute");
+        }
+        finally
+        {
+            Volatile.Write(ref _running, 0);
         }
     }
 
-    private void ReportThrottled(Exception ex)
+    private async Task<DateTime> GetStartAsync(DateTime thisMinute, CancellationToken cancellationToken)
     {
-        var now = Environment.TickCount64;
-        var prev = Interlocked.Read(ref _lastReportTick);
-        if (now - prev < ReportThrottleMs) return;
-        if (Interlocked.CompareExchange(ref _lastReportTick, now, prev) != prev) return;
-        _exceptionHandler.Report(ex, "Aggregation.Minute");
+        var recent = thisMinute - Lookback;
+        var resumeFrom = _aggregatedUpTo
+            ?? await _events.GetLatestAggregatedMinuteAsync(cancellationToken).ConfigureAwait(false);
+        return resumeFrom is { } r && r < recent ? r : recent;
     }
 }

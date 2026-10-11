@@ -31,6 +31,36 @@ public sealed class ShiftDefinitionEditorHelpersTests
         actual.Should().Be(expectedMinutes);
     }
 
+    [Theory]
+    [InlineData("08:00", 8, 0)]
+    [InlineData(" 16:30 ", 16, 30)]
+    [InlineData("00:00", 0, 0)]
+    [InlineData("24:00", 0, 0)]   // 当天结束,等同次日 00:00:内置三班倒模板就是 16:00–24:00
+    public void TryParseTime_accepts_HH_mm_and_24_00(string text, int hour, int minute)
+    {
+        ShiftDefinitionEditor.TryParseTime(text, out var time).Should().BeTrue();
+        time.Should().Be(new TimeOnly(hour, minute));
+    }
+
+    [Theory]
+    [InlineData("8:00")]
+    [InlineData("24:30")]
+    [InlineData("25:00")]
+    [InlineData("noon")]
+    [InlineData("")]
+    [InlineData(null)]
+    public void TryParseTime_rejects_other_formats(string? text)
+    {
+        ShiftDefinitionEditor.TryParseTime(text, out _).Should().BeFalse();
+    }
+
+    [Fact]
+    public void EditableShift_shift_ending_at_24_00_is_eight_hours()
+    {
+        var es = new EditableShift { StartTime = "16:00", EndTime = "24:00" };
+        es.DurationLabel.Should().Be("8 小时 0 分");
+    }
+
     [Fact]
     public void EditableShift_CrossesMidnight_true_when_start_ge_end()
     {

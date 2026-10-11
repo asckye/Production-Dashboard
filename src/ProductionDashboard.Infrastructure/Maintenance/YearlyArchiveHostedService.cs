@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using ProductionDashboard.Core.Diagnostics;
 using ProductionDashboard.Core.Export;
 using ProductionDashboard.Core.Production;
+using ProductionDashboard.Infrastructure.Export;
 using ProductionDashboard.Infrastructure.Persistence;
 
 namespace ProductionDashboard.Infrastructure.Maintenance;
@@ -13,7 +14,11 @@ namespace ProductionDashboard.Infrastructure.Maintenance;
 /// 年度归档:每年 1 月 1 日(或启动时如果发现上一年还没归档)
 /// 把上一年全部数据导出成 <c>Data/Archives/{年}.xlsx</c>,然后清掉主库里那段数据。
 ///
-/// <para>幂等:导出 Excel 文件若已存在则不再清理;清理后下次启动看到当前年份和归档年份一致就跳过。</para>
+/// <para>
+/// 同一年可能被归档不止一次(例如上次清库中途被中断,或之后又补进了该年的数据)。
+/// 每次归档的 Excel 和清库前备份都另存为新文件,绝不覆盖之前的归档:
+/// 否则第二次只含少量剩余数据的归档会把第一次完整的归档冲掉,数据就永久丢了。
+/// </para>
 /// </summary>
 public sealed class YearlyArchiveHostedService : IHostedService, IAsyncDisposable
 {
@@ -190,17 +195,16 @@ public sealed class YearlyArchiveHostedService : IHostedService, IAsyncDisposabl
     }
 
     /// <summary>
-    /// 清库前对整库做一次 SQLite Online Backup,落到 <c>Archives/pre-purge-{year}.db</c>。
-    /// 用只读连接作源,WAL 兼容、不阻塞写入。重复归档时覆盖旧备份。返回备份文件路径。
+    /// 清库前对整库做一次 SQLite Online Backup,落到 <c>Archives/pre-purge-{year}.db</c>
+    /// (已存在时另存为带时间戳的新文件,不覆盖之前的备份)。
+    /// 用只读连接作源,WAL 兼容、不阻塞写入。返回备份文件路径。
     /// </summary>
     private string BackupBeforePurge(int year)
     {
         var dbPath = _factory.DatabasePath;
         var archiveDir = Path.Combine(Path.GetDirectoryName(dbPath)!, "Archives");
         Directory.CreateDirectory(archiveDir);
-        var backupPath = Path.Combine(archiveDir, $"pre-purge-{year}.db");
-
-        if (File.Exists(backupPath)) File.Delete(backupPath);
+        var backupPath = UniqueFilePath.Next(archiveDir, $"pre-purge-{year}", ".db", _clock.GetLocalNow().DateTime);
 
         using var source = _factory.OpenRead();
         using var dest = new SqliteConnection(new SqliteConnectionStringBuilder

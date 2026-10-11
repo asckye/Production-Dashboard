@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.IO;
 using ClosedXML.Excel;
 using Microsoft.Extensions.Logging;
@@ -69,7 +70,8 @@ public sealed class ClosedXmlExportService : IExcelExportService
     {
         var archiveDir = Path.Combine(DataDir, "Archives");
         Directory.CreateDirectory(archiveDir);
-        var path = Path.Combine(archiveDir, $"{year}.xlsx");
+        // 同一年再次归档时另存新文件,不覆盖上一次的归档(上一次可能才是完整的那份)
+        var path = UniqueFilePath.Next(archiveDir, year.ToString(CultureInfo.InvariantCulture), ".xlsx", DateTime.Now);
 
         await Task.Run(() =>
         {

@@ -1,3 +1,4 @@
+using System.Globalization;
 using Dapper;
 using ProductionDashboard.Core.Production;
 using ProductionDashboard.Infrastructure.Persistence;
@@ -57,31 +58,24 @@ public sealed class ProductionEventRepository : IProductionEventRepository
     }
 
     /// <inheritdoc/>
-    public async Task UpsertMinuteAggregateAsync(
-        DateTime minuteStartUtc, DateOnly shiftDate, int shiftDefId, int? teamId, int count,
-        CancellationToken cancellationToken)
+    public async Task<int> RebuildMinuteAggregatesAsync(
+        DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken)
     {
-        const string sql = """
-            INSERT INTO ProductionMinute (MinuteStart, ShiftDate, ShiftDefId, TeamId, Count)
-            VALUES (@MinuteStart, @ShiftDate, @ShiftDefId, @TeamId, @Count)
-            ON CONFLICT(MinuteStart) DO UPDATE SET
-                ShiftDate  = excluded.ShiftDate,
-                ShiftDefId = excluded.ShiftDefId,
-                TeamId     = excluded.TeamId,
-                Count      = excluded.Count;
-            """;
-
         await using var conn = _factory.OpenWrite();
-        await conn.ExecuteAsync(new CommandDefinition(
-            sql,
-            new
-            {
-                MinuteStart = minuteStartUtc.ToString("O"),
-                ShiftDate = shiftDate.ToString("yyyy-MM-dd"),
-                ShiftDefId = shiftDefId,
-                TeamId = teamId,
-                Count = count,
-            },
+        return await conn.ExecuteAsync(new CommandDefinition(
+            MinuteAggregateSql.RebuildRange,
+            new { from = fromUtc.ToString("O"), to = toUtc.ToString("O") },
             cancellationToken: cancellationToken));
+    }
+
+    /// <inheritdoc/>
+    public async Task<DateTime?> GetLatestAggregatedMinuteAsync(CancellationToken cancellationToken)
+    {
+        await using var conn = _factory.OpenRead();
+        var latest = await conn.ExecuteScalarAsync<string?>(new CommandDefinition(
+            "SELECT MAX(MinuteStart) FROM ProductionMinute;", cancellationToken: cancellationToken));
+        return latest is null
+            ? null
+            : DateTime.Parse(latest, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind);
     }
 }

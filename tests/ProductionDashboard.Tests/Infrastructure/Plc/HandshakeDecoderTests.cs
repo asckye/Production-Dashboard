@@ -75,8 +75,8 @@ public sealed class HandshakeDecoderTests
 
     [Theory]
     [InlineData(10u, 13u, 3)]      // 一次轮询窗口跨 3 个触发
-    [InlineData(0u, 100u, 100)]    // 一次跨 100 个(极端情况)
-    [InlineData(0u, 1000000u, 1000000)]  // DWord 量级
+    [InlineData(0u, 100u, 100)]    // 断线期间累计 100 个,重连后补上
+    [InlineData(0u, 10000u, 10000)]  // 合理增量的上限
     public void Seq_jump_yields_delta_equal_to_difference(
         uint lastSeq, uint newSeq, int expectedDelta)
     {
@@ -86,6 +86,22 @@ public sealed class HandshakeDecoderTests
         delta.Should().Be(expectedDelta);
         shouldClear.Should().BeTrue();
         newLast.Should().Be(newSeq);
+    }
+
+    [Theory]
+    [InlineData(5000u, 0u)]          // PLC 重启,序号从 0 重新开始
+    [InlineData(5000u, 3u)]          // PLC 重启后已经又生产了几件
+    [InlineData(0u, 1000000u)]       // 序号被手动改写成很大的值
+    public void Implausible_jump_is_treated_as_counter_reset_and_realigned(uint lastSeq, uint newSeq)
+    {
+        // 回归:原实现按模 2^32 计算,PLC 重启后会一次计入约 43 亿件
+        var (delta, shouldClear, newLast) =
+            HandshakeDecoder.Decode(bit: true, seq: newSeq, isFirstRead: false, lastSeq: lastSeq);
+
+        HandshakeDecoder.IsCounterReset(newSeq, lastSeq).Should().BeTrue();
+        delta.Should().Be(0);
+        shouldClear.Should().BeTrue("应答 PLC,让它继续下一次握手");
+        newLast.Should().Be(newSeq, "从新的序号重新开始计数");
     }
 
     [Theory]

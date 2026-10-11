@@ -11,7 +11,7 @@ namespace ProductionDashboard.Core.Production;
 /// 把 PLC 信号、班次状态、班组分配、SQLite 落库串起来的服务:
 /// <list type="bullet">
 ///   <item>订阅 <see cref="IPlcService.CompleteSignalReceived"/></item>
-///   <item>根据 <see cref="IShiftManager.Current"/> 判定信号归属哪个槽位</item>
+///   <item>根据信号时间戳(<see cref="IShiftManager.GetShiftAt"/>)判定信号归属哪个班次槽位</item>
 ///   <item>根据 <see cref="ITeamAssignmentService.GetTeamForSlot"/> 判定信号归属哪个班组</item>
 ///   <item>内存按 TeamId 分桶累计(<see cref="_countsByTeam"/>),毫秒级读</item>
 ///   <item>事件经 <see cref="Channel{T}"/> 异步批量写入数据库,带 TeamId 落库</item>
@@ -38,9 +38,9 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
 
     // 把"持续性故障"升级成 UI 红条告警,但要限流 —— 采集是热路径,
     // 故障(磁盘满/DB 锁)往往连续发生,不限流会刷爆 toast。每类故障最短间隔 30s 报一次。
-    private const long ReportThrottleMs = 30_000;
-    private long _lastChannelReportTick = long.MinValue;
-    private long _lastDrainReportTick = long.MinValue;
+    private static readonly TimeSpan AlertInterval = TimeSpan.FromSeconds(30);
+    private readonly AlertThrottle _channelAlerts = new(AlertInterval);
+    private readonly AlertThrottle _drainAlerts = new(AlertInterval);
 
     private Dictionary<int, int> _countsByTeam = new();
     private long _droppedSignals;
@@ -173,37 +173,46 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
 
     private void OnSignal(DateTime utcNow)
     {
-        var current = _shifts.Current;
-        if (current is null)
+        // 按信号自己的时间戳判断归属哪个班次,而不是用 _shifts.Current:
+        // Current 由定时检测更新,班次交接后的一小段时间里可能还是上一个班次,
+        // 用它会把新班次的产量记到上一个班次 / 班组头上。
+        var shift = _shifts.GetShiftAt(utcNow.ToLocalTime());
+        if (shift is null)
         {
-            _logger.LogDebug("信号到达但无活动班次,丢弃 (utcNow={UtcNow:O})", utcNow);
+            _logger.LogDebug("信号到达但不在任何班次时段内,丢弃 (utcNow={UtcNow:O})", utcNow);
             return;
         }
 
-        // 关键:查当前槽位的班组分配。无分配则不能记录(否则数据归属错乱)。
-        var team = _teams.GetTeamForSlot(current.Definition.Id);
+        // 关键:查该槽位的班组分配。无分配则不能记录(否则数据归属错乱)。
+        var team = _teams.GetTeamForSlot(shift.Definition.Id);
         if (team is null)
         {
             Interlocked.Increment(ref _signalsWithoutTeam);
             _logger.LogWarning(
-                "信号到达但当前班次 {Shift} (Id={ShiftDefId}) 无班组分配,丢弃。请到「班次配置 → 班组管理」分配班组。",
-                current.Definition.Code, current.Definition.Id);
+                "信号到达但班次 {Shift} (Id={ShiftDefId}) 无班组分配,丢弃。请到「班次配置 → 班组管理」分配班组。",
+                shift.Definition.Code, shift.Definition.Id);
             return;
         }
 
-        int newCount;
-        lock (_gate)
+        // 内存计数只累计当前周期(界面 Hero 大数字显示的那个)。信号已属于下一个周期、
+        // 但 ShiftManager 还没切换时,只落库不计内存:随后的班次切换会从数据库重新加载新周期的累计。
+        var isCurrentPeriod = IsSamePeriod(shift, _shifts.Current);
+        var newCount = 0;
+        if (isCurrentPeriod)
         {
-            _countsByTeam.TryGetValue(team.Id, out var cur);
-            newCount = cur + 1;
-            _countsByTeam[team.Id] = newCount;
+            lock (_gate)
+            {
+                _countsByTeam.TryGetValue(team.Id, out var cur);
+                newCount = cur + 1;
+                _countsByTeam[team.Id] = newCount;
+            }
         }
 
         var evt = new ProductionEvent(
             Id: 0,
             Timestamp: utcNow,
-            ShiftDate: current.ShiftDate,
-            ShiftDefId: current.Definition.Id,
+            ShiftDate: shift.ShiftDate,
+            ShiftDefId: shift.Definition.Id,
             TeamId: team.Id,
             Source: "PLC");
 
@@ -214,14 +223,22 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
             // 实时 Warning + 限流 UI 告警,让操作员立刻知道"屏幕数字对、但归档可能少"。
             _logger.LogWarning(
                 "写入通道积压,本次事件落库被丢弃 · TeamId={TeamId} · 累计丢弃 {Dropped} 条", team.Id, dropped);
-            ReportThrottled(ref _lastChannelReportTick,
-                new InvalidOperationException(
-                    $"计数落库通道积压,已累计丢弃 {dropped} 条事件(内存计数正确,但数据库落库滞后)"),
-                "CountingService.Channel");
+            if (_channelAlerts.ShouldReport())
+            {
+                _exceptionHandler.Report(
+                    new InvalidOperationException(
+                        $"计数落库通道积压,已累计丢弃 {dropped} 条事件(内存计数正确,但数据库落库滞后)"),
+                    "CountingService.Channel");
+            }
         }
 
-        RaiseTeamCountChanged(team.Id, newCount);
+        if (isCurrentPeriod) RaiseTeamCountChanged(team.Id, newCount);
     }
+
+    private static bool IsSamePeriod(ShiftAssignment shift, ShiftAssignment? current) =>
+        current is not null
+        && shift.Definition.Id == current.Definition.Id
+        && shift.ShiftDate == current.ShiftDate;
 
     private void OnShiftChanged(ShiftAssignment? oldShift, ShiftAssignment? newShift)
     {
@@ -335,7 +352,7 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
                     _logger.LogError(ex,
                         "批量落库失败,丢弃本批 {Count} 条事件 (内存计数器仍准确)", batch.Count);
                     // 落库失败 = DB 在丢数据(磁盘满/锁/损坏),屏幕数字仍正常 → 必须告警 UI。
-                    ReportThrottled(ref _lastDrainReportTick, ex, "CountingService.Drain");
+                    if (_drainAlerts.ShouldReport()) _exceptionHandler.Report(ex, "CountingService.Drain");
                 }
             }
         }
@@ -352,19 +369,5 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
         {
             _logger.LogError(ex, "TeamCountChanged 订阅方抛出异常");
         }
-    }
-
-    /// <summary>
-    /// 限流上报到全局异常处理器(弹 UI 红条)。同一类故障在 <see cref="ReportThrottleMs"/>
-    /// 窗口内只报一次,避免热路径上持续性故障刷爆告警。用单调时钟 <c>Environment.TickCount64</c>,
-    /// 不依赖系统时间调整;CAS 抢占保证并发(PLC 线程 + drain 线程)下仍只报一次。
-    /// </summary>
-    private void ReportThrottled(ref long lastTick, Exception ex, string source)
-    {
-        var now = Environment.TickCount64;
-        var prev = Interlocked.Read(ref lastTick);
-        if (now - prev < ReportThrottleMs) return;
-        if (Interlocked.CompareExchange(ref lastTick, now, prev) != prev) return;
-        _exceptionHandler.Report(ex, source);
     }
 }

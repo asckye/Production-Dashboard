@@ -19,7 +19,7 @@ public interface IExcelExportService
         CancellationToken cancellationToken);
 
     /// <summary>
-    /// 年度归档时调用,生成 <c>Data/Archives/{年}.xlsx</c>。
+    /// 年度归档时调用,生成 <c>Data/Archives/{年}.xlsx</c>;该文件已存在时另存为带时间戳的新文件,不覆盖。
     /// 包含年度摘要 + 所有班次汇总 + 每日产量 + 每月产量。
     /// 返回生成的绝对路径。
     /// </summary>

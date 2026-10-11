@@ -34,22 +34,23 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
     {
         ArgumentNullException.ThrowIfNull(changes);
 
+        // 删除立即生效:最后生效日设为昨天,今天起的班次列表里就不再有它。
+        // (设为今天的话,当天重新加载时它仍算"生效",删掉的班次会在界面上重新出现。)
         var today = DateOnly.FromDateTime(_clock.GetLocalNow().DateTime);
+        var deletedLastEffectiveDay = today.AddDays(-1);
+
+        await _shiftRepository.SaveChangesAsync(changes, deletedLastEffectiveDay, cancellationToken).ConfigureAwait(false);
+
         foreach (var id in changes.DeletedIds)
         {
-            await _shiftRepository.SoftDeleteShiftDefinitionAsync(id, today, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation("班次软删除 · Id={Id} · 自 {Date} 起不再生效", id, today);
         }
-
         foreach (var definition in changes.Added)
         {
-            var newId = await _shiftRepository.InsertShiftDefinitionAsync(definition, cancellationToken).ConfigureAwait(false);
-            _logger.LogInformation("班次新增 · {Code} {Name} → Id={Id}", definition.Code, definition.Name, newId);
+            _logger.LogInformation("班次新增 · {Code} {Name}", definition.Code, definition.Name);
         }
-
         foreach (var definition in changes.Updated)
         {
-            await _shiftRepository.UpdateShiftDefinitionAsync(definition, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation(
                 "班次已更新 · {Code} {Name} {Start}-{End} 目标={Target}",
                 definition.Code, definition.Name, definition.StartTime, definition.EndTime, definition.TargetCount);

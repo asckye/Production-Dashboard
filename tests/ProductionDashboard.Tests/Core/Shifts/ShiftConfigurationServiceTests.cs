@@ -18,19 +18,25 @@ public class ShiftConfigurationServiceTests
         NullLogger<ShiftConfigurationService>.Instance);
 
     [Fact]
-    public async Task Saving_shift_changes_deletes_inserts_updates_then_reloads_shifts()
+    public async Task Saving_shift_changes_writes_them_in_one_call_then_reloads_shifts()
     {
-        var added = Shift(0, "C");
-        var updated = Shift(2, "B");
+        var changes = new ShiftDefinitionChanges(DeletedIds: [1], Added: [Shift(0, "C")], Updated: [Shift(2, "B")]);
 
+        await CreateService().SaveShiftDefinitionsAsync(changes, CancellationToken.None);
+
+        _shiftRepo.Saved.Should().ContainSingle().Which.Should().Be(changes);
+        _shifts.RefreshCount.Should().Be(1, "保存后运行中的 ShiftManager 必须重新加载班次");
+    }
+
+    [Fact]
+    public async Task Deleted_shift_stops_taking_effect_today()
+    {
         await CreateService().SaveShiftDefinitionsAsync(
-            new ShiftDefinitionChanges(DeletedIds: [1], Added: [added], Updated: [updated]),
+            new ShiftDefinitionChanges(DeletedIds: [1], Added: [], Updated: []),
             CancellationToken.None);
 
-        _shiftRepo.SoftDeleted.Should().Equal((1, new DateOnly(2026, 10, 11)));
-        _shiftRepo.Inserted.Should().Equal(added);
-        _shiftRepo.Updated.Should().Equal(updated);
-        _shifts.RefreshCount.Should().Be(1, "保存后运行中的 ShiftManager 必须重新加载班次");
+        // 本地日期 2026-10-11 → 最后生效日是 10-10,当天重新加载时就不会再出现
+        _shiftRepo.DeletedLastEffectiveDay.Should().Be(new DateOnly(2026, 10, 10));
     }
 
     [Fact]
@@ -61,27 +67,19 @@ public class ShiftConfigurationServiceTests
 
     private sealed class RecordingShiftRepository : IShiftDefinitionRepository
     {
-        public List<(int Id, DateOnly EffectiveTo)> SoftDeleted { get; } = [];
-        public List<ShiftDefinition> Inserted { get; } = [];
-        public List<ShiftDefinition> Updated { get; } = [];
+        public List<ShiftDefinitionChanges> Saved { get; } = [];
+        public DateOnly? DeletedLastEffectiveDay { get; private set; }
 
-        public Task SoftDeleteShiftDefinitionAsync(int id, DateOnly effectiveTo, CancellationToken cancellationToken)
+        public Task SaveChangesAsync(
+            ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken)
         {
-            SoftDeleted.Add((id, effectiveTo));
+            Saved.Add(changes);
+            DeletedLastEffectiveDay = deletedLastEffectiveDay;
             return Task.CompletedTask;
         }
 
-        public Task<int> InsertShiftDefinitionAsync(ShiftDefinition definition, CancellationToken cancellationToken)
-        {
-            Inserted.Add(definition);
-            return Task.FromResult(100 + Inserted.Count);
-        }
-
-        public Task UpdateShiftDefinitionAsync(ShiftDefinition definition, CancellationToken cancellationToken)
-        {
-            Updated.Add(definition);
-            return Task.CompletedTask;
-        }
+        public Task<int> InsertShiftDefinitionAsync(ShiftDefinition definition, CancellationToken cancellationToken) =>
+            throw new NotSupportedException();
 
         public Task<IReadOnlyList<ShiftDefinition>> GetActiveShiftDefinitionsAsync(DateOnly asOf, CancellationToken cancellationToken) =>
             throw new NotSupportedException();

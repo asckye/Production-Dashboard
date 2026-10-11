@@ -61,7 +61,7 @@ public sealed partial class ShiftConfigViewModel : ObservableObject
     /// <summary>聚合 dirty 状态:任一子编辑器有未保存改动则为 true。Save 按钮据此启用。</summary>
     [ObservableProperty] public partial bool HasUnsavedChanges { get; set; }
 
-    /// <summary>保存命令:先保存班次定义,再保存班组,任一失败则中断。</summary>
+    /// <summary>保存命令:两部分都校验通过后,先保存班次定义,再保存班组。</summary>
     public IAsyncRelayCommand SaveCommand { get; }
     /// <summary>取消命令:从底层服务重新加载,丢弃所有未保存改动。</summary>
     public IRelayCommand CancelCommand { get; }
@@ -81,35 +81,51 @@ public sealed partial class ShiftConfigViewModel : ObservableObject
         SaveCommand.NotifyCanExecuteChanged();
     }
 
+    /// <summary>
+    /// 保存。由命令在 UI 线程上调用,await 之后也回到 UI 线程,可以直接操作编辑器集合。
+    /// <list type="number">
+    ///   <item>先校验班次和班组两部分,都通过才写数据库,避免"班次已保存、班组校验失败"的半保存状态</item>
+    ///   <item>保存班次(单个事务,失败则数据库不变,可直接重试)</item>
+    ///   <item>班次保存成功后立刻重新加载班次编辑器:新增的班次拿到数据库 Id、不再标记为"新增",
+    ///         这样即使接下来班组保存失败,再点保存也不会把同样的班次再插入一遍</item>
+    ///   <item>保存班组</item>
+    /// </list>
+    /// </summary>
     private async Task SaveAsync()
     {
         var ct = CancellationToken.None;
+        if (!Definitions.Validate() || !Teams.Validate()) return;
+
+        var teamDirtyCount = Teams.DirtyCount;
         try
         {
-            var shiftOk = await Definitions.SaveAsync(ct).ConfigureAwait(false);
-            if (!shiftOk) return;
-
-            var teamDirtyCount = Teams.DirtyCount;
-            var teamOk = await Teams.SaveAsync(ct).ConfigureAwait(false);
-            if (!teamOk) return;
-
-            await _dispatcher.InvokeAsync(() =>
-            {
-                Definitions.ClearDirty();
-                Teams.ClearDirty();
-                HasUnsavedChanges = false;
-                SaveCommand.NotifyCanExecuteChanged();
-                Reload();
-                var msg = teamDirtyCount > 0
-                    ? $"班组配置已保存(含 {teamDirtyCount} 个班组改动) · {_clock.GetLocalNow():HH:mm:ss}"
-                    : $"班组配置已保存 · {_clock.GetLocalNow():HH:mm:ss}";
-                _toast.ShowSuccess(msg);
-            });
+            if (!await Definitions.SaveAsync(ct)) return;
         }
         catch (Exception ex)
         {
-            _logger.LogError(ex, "班组配置保存失败");
-            _toast.ShowError(ex.Message, "班组配置保存失败");
+            _logger.LogError(ex, "班次定义保存失败");
+            _toast.ShowError(ex.Message, "班次保存失败(未做任何修改,可重试)");
+            return;
         }
+
+        Definitions.Reload();
+        RecalcHasUnsavedChanges();
+
+        try
+        {
+            if (!await Teams.SaveAsync(ct)) return;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "班组保存失败");
+            _toast.ShowError(ex.Message, "班次已保存,班组保存失败(可重试)");
+            return;
+        }
+
+        Reload();
+        var msg = teamDirtyCount > 0
+            ? $"班组配置已保存(含 {teamDirtyCount} 个班组改动) · {_clock.GetLocalNow():HH:mm:ss}"
+            : $"班组配置已保存 · {_clock.GetLocalNow():HH:mm:ss}";
+        _toast.ShowSuccess(msg);
     }
 }

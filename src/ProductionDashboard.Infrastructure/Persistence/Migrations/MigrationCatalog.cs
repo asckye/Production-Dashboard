@@ -173,5 +173,13 @@ public static class MigrationCatalog
                 // 避免回表。部分索引(WHERE TeamId IS NOT NULL)更小,且这些查询都只关心有班组归属的行。
                 "CREATE INDEX IF NOT EXISTS IX_Event_Timestamp_Team ON ProductionEvent(Timestamp, TeamId) WHERE TeamId IS NOT NULL;",
             }),
+
+        new(
+            Version: 3,
+            Description: "分钟聚合补全 · 用原始事件重算 ProductionMinute,补上旧版定时聚合漏掉的分钟(本周 / 本月 / 本年累计偏少)",
+            Statements: new[]
+            {
+                MinuteAggregateSql.RebuildAll,
+            }),
     };
 }

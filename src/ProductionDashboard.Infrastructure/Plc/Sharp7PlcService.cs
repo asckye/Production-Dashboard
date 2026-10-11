@@ -125,34 +125,28 @@ public sealed class Sharp7PlcService : PlcServiceBase
     private async Task PollLoopAsync(CancellationToken ct)
     {
         var pollDelay = TimeSpan.FromMilliseconds(_options.PollIntervalMs);
-        var reconnectMs = 1000;
+        var backoff = new ReconnectBackoff(TimeSpan.FromMilliseconds(_options.ReconnectMaxDelayMs));
 
         while (!ct.IsCancellationRequested)
         {
             try
             {
-                if (!_connected)
+                if (!_connected && !TryConnect())
                 {
-                    if (!TryConnect())
-                    {
-                        await Task.Delay(reconnectMs, ct).ConfigureAwait(false);
-                        reconnectMs = Math.Min(reconnectMs * 2, _options.ReconnectMaxDelayMs);
-                        continue;
-                    }
-                    reconnectMs = 1000;
-                }
-
-                if (TryReadSignalBit(out var bit))
-                {
-                    HandleBit(bit);
-                }
-                else
-                {
-                    // 读失败,断开后重连
-                    Disconnect();
+                    await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
                     continue;
                 }
 
+                if (!TryReadSignalBit(out var bit))
+                {
+                    // 读失败:断开,同样等待退避间隔后再重连(不能立刻重连,见 ReconnectBackoff)
+                    Disconnect();
+                    await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
+                    continue;
+                }
+
+                backoff.Reset();
+                HandleBit(bit);
                 MaybeWriteHeartbeat();
 
                 await Task.Delay(pollDelay, ct).ConfigureAwait(false);
@@ -165,8 +159,7 @@ public sealed class Sharp7PlcService : PlcServiceBase
             {
                 _logger.LogError(ex, "PLC 轮询异常,将断开重连");
                 Disconnect();
-                await Task.Delay(reconnectMs, ct).ConfigureAwait(false);
-                reconnectMs = Math.Min(reconnectMs * 2, _options.ReconnectMaxDelayMs);
+                await Task.Delay(backoff.NextDelay(), ct).ConfigureAwait(false);
             }
         }
     }

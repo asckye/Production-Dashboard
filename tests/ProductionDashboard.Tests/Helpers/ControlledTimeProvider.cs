@@ -6,18 +6,28 @@ namespace ProductionDashboard.Tests.Helpers;
 /// </summary>
 public sealed class ControlledTimeProvider : TimeProvider
 {
+    private static readonly DateTimeOffset Origin = new(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+
     private DateTimeOffset _utcNow;
     private readonly List<ControlledTimer> _timers = new();
     private readonly Lock _gate = new();
 
     public ControlledTimeProvider()
     {
-        _utcNow = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        _utcNow = Origin;
     }
 
     public override DateTimeOffset GetUtcNow()
     {
         lock (_gate) return _utcNow;
+    }
+
+    /// <summary>单调时间戳也跟随虚拟时钟推进(以 100ns tick 为单位),供 GetElapsedTime 一类的计时使用。</summary>
+    public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+    public override long GetTimestamp()
+    {
+        lock (_gate) return (_utcNow - Origin).Ticks;
     }
 
     public override ITimer CreateTimer(TimerCallback callback, object? state, TimeSpan dueTime, TimeSpan period)
