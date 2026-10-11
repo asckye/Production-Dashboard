@@ -189,8 +189,9 @@ public sealed partial class HeroAndShiftPresenter : ObservableObject, IDisposabl
 
     private void UpdateShiftLabels(ShiftAssignment? current)
     {
-        AIsActive = current?.Definition.Code == "A";
-        BIsActive = current?.Definition.Code == "B";
+        var (aDef, bDef) = ComparedShifts.Pick(_shifts.Definitions);
+        AIsActive = current is not null && current.Definition.Id == aDef?.Id;
+        BIsActive = current is not null && current.Definition.Id == bDef?.Id;
 
         Debug.Assert(!(AIsActive && BIsActive), "AIsActive 与 BIsActive 必须互斥");
 
@@ -202,8 +203,7 @@ public sealed partial class HeroAndShiftPresenter : ObservableObject, IDisposabl
 
     private void UpdateShiftTimes()
     {
-        var aDef = _shifts.Definitions.FirstOrDefault(d => d.Code == "A");
-        var bDef = _shifts.Definitions.FirstOrDefault(d => d.Code == "B");
+        var (aDef, bDef) = ComparedShifts.Pick(_shifts.Definitions);
 
         ATime = aDef is null
             ? "—"
@@ -220,9 +220,7 @@ public sealed partial class HeroAndShiftPresenter : ObservableObject, IDisposabl
 
     private void UpdateSlotTeamLabels()
     {
-        var defs = _shifts.Definitions;
-        var aDef = defs.FirstOrDefault(d => d.Code == "A");
-        var bDef = defs.FirstOrDefault(d => d.Code == "B");
+        var (aDef, bDef) = ComparedShifts.Pick(_shifts.Definitions);
 
         var aTeam = aDef is null ? null : _teamAssign.GetTeamForSlot(aDef.Id);
         var bTeam = bDef is null ? null : _teamAssign.GetTeamForSlot(bDef.Id);

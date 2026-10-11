@@ -526,8 +526,8 @@ public sealed partial class EditableShift : ObservableObject
     /// <summary>未持久化的新班次。Save 时走 Insert 路径。</summary>
     public bool IsNew { get; set; }
 
-    /// <summary>被标记删除。Save 时走 SoftDelete。UI 用来灰显 / 隐藏。</summary>
-    public bool IsDeleted { get; set; }
+    /// <summary>被标记删除。Save 时走 SoftDelete。可观察:界面据此立即灰显该班次(保存前点「取消」可撤销)。</summary>
+    [ObservableProperty] public partial bool IsDeleted { get; set; }
 
     /// <summary>班次显示名称(如 "白班" / "夜班")。</summary>
     [ObservableProperty] public partial string Name { get; set; } = "";

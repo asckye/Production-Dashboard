@@ -26,6 +26,7 @@ public sealed partial class DashboardViewModel : ObservableObject, IDisposable
     private readonly ILogger<DashboardViewModel> _logger;
     private readonly Dispatcher _ui;
     private readonly DispatcherTimer _refreshTimer;
+    private int _refreshing;   // 1 = 上一次聚合刷新还没结束
     private bool _disposed;
 
     /// <summary>注入 PLC / 班次 / 计数 / 班组 / 分析仓库 / 日志,构造两个 presenter 并启动 2 秒 timer。</summary>
@@ -85,17 +86,25 @@ public sealed partial class DashboardViewModel : ObservableObject, IDisposable
 
     private async Task RefreshAggregatesAsync()
     {
+        // 上一次还没结束就跳过:大库查询偶尔超过 2 秒时,刷新请求不会越积越多
+        if (Interlocked.Exchange(ref _refreshing, 1) == 1) return;
         try
         {
             var ct = CancellationToken.None;
-            // 两个 presenter 各自查 DB,并行起跑。SQLite 单写多读,并发读安全。
+            // 查询放到线程池执行。SQLite 的异步方法实际上是同步完成的,
+            // 直接在 UI 线程上 await 会让整个查询期间界面卡住。
+            // 两个 presenter 各自查库(SQLite 单写多读,并发读安全),结果再通过 dispatcher 回到 UI 线程。
             await Task.WhenAll(
-                Metrics.RefreshAsync(ct),
-                Hero.RefreshFromAnalyticsAsync(ct)).ConfigureAwait(false);
+                Task.Run(() => Metrics.RefreshAsync(ct), ct),
+                Task.Run(() => Hero.RefreshFromAnalyticsAsync(ct), ct)).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "Dashboard 聚合查询失败");
+        }
+        finally
+        {
+            Volatile.Write(ref _refreshing, 0);
         }
     }
 

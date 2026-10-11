@@ -41,7 +41,7 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
     private S7Client? _client;
     private bool _isFirstRead = true;
     private uint _lastSeq;
-    private DateTime _lastHeartbeatAt = DateTime.MinValue;
+    private long? _lastHeartbeatAt;      // 单调时间戳,不受系统校时影响
     private short _heartbeatCounter;
 
     private volatile bool _connected;
@@ -322,8 +322,9 @@ public sealed class Sharp7PlcHandshakeService : PlcServiceBase
     {
         if (_heartbeatAddr is null || _client is null) return;
 
-        var now = DateTime.UtcNow;
-        if ((now - _lastHeartbeatAt).TotalMilliseconds < _options.HeartbeatIntervalMs)
+        var now = TimeProvider.System.GetTimestamp();
+        if (_lastHeartbeatAt is { } last
+            && TimeProvider.System.GetElapsedTime(last, now).TotalMilliseconds < _options.HeartbeatIntervalMs)
         {
             return;
         }

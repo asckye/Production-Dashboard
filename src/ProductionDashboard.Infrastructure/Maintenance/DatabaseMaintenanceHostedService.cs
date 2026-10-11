@@ -11,15 +11,31 @@ namespace ProductionDashboard.Infrastructure.Maintenance;
 /// <summary>
 /// 数据库维护后台任务:
 /// <list type="bullet">
-///   <item>每天 <see cref="DatabaseOptions.VacuumTime"/> 跑 VACUUM(默认 02:00)</item>
+///   <item>每天 <see cref="DatabaseOptions.VacuumTime"/>(默认 02:00)整理数据库:WAL checkpoint,
+///         空闲页较多时再做 VACUUM</item>
 ///   <item>每天 <see cref="DatabaseOptions.BackupTime"/> 热备份到 <c>Backups/yyyy-MM-dd.db</c>(默认 03:00)</item>
 ///   <item>清理超过 <see cref="DatabaseOptions.BackupRetentionDays"/> 天的旧备份</item>
 /// </list>
 /// 用每分钟轮询 + "最后执行日期" 的简单调度,容错 sleep/时钟跳变。
+/// "最后执行日期"存在数据库的 AppConfig 表里,程序重启后不会在同一天重复执行。
+/// <para>
+/// VACUUM 期间整个数据库被独占锁住,计数写入只能等待,所以只在计划时刻之后的
+/// <see cref="VacuumWindow"/> 内、且空闲页超过 <see cref="VacuumFreePageRatio"/> 时才做
+/// (主库基本只增不删,通常只有年度归档清库之后才值得 VACUUM)。
+/// </para>
 /// </summary>
 public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDisposable
 {
     private static readonly TimeSpan CheckInterval = TimeSpan.FromMinutes(1);
+
+    /// <summary>只在计划时刻之后这段时间内做 VACUUM;程序白天重启时不会在生产期间锁库。</summary>
+    internal static readonly TimeSpan VacuumWindow = TimeSpan.FromHours(2);
+
+    /// <summary>空闲页占比超过这个值才做 VACUUM。</summary>
+    internal const double VacuumFreePageRatio = 0.25;
+
+    private const string LastVacuumKey = "Maintenance.LastVacuumDate";
+    private const string LastBackupKey = "Maintenance.LastBackupDate";
 
     private readonly IDbConnectionFactory _factory;
     private readonly DatabaseOptions _options;
@@ -31,6 +47,7 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
 
     private DateOnly _lastVacuumDate = DateOnly.MinValue;
     private DateOnly _lastBackupDate = DateOnly.MinValue;
+    private bool _lastDatesLoaded;
 
     /// <summary>注入连接工厂 / 选项 / 日志,<paramref name="clock"/> 可注入测试时钟。</summary>
     public DatabaseMaintenanceHostedService(
@@ -110,8 +127,16 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
         }
     }
 
-    private async Task CheckAndRunAsync(CancellationToken ct)
+    /// <summary>检查是否到了维护时刻并执行。internal 以便单元测试直接驱动。</summary>
+    internal async Task CheckAndRunAsync(CancellationToken ct)
     {
+        if (!_lastDatesLoaded)
+        {
+            _lastVacuumDate = await ReadDateAsync(LastVacuumKey, ct).ConfigureAwait(false);
+            _lastBackupDate = await ReadDateAsync(LastBackupKey, ct).ConfigureAwait(false);
+            _lastDatesLoaded = true;
+        }
+
         var nowLocal = _clock.GetLocalNow().DateTime;
         var today = DateOnly.FromDateTime(nowLocal);
         var nowTime = TimeOnly.FromDateTime(nowLocal);
@@ -119,8 +144,17 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
         var vacuumTime = TimeOnly.Parse(_options.VacuumTime, CultureInfo.InvariantCulture);
         if (_lastVacuumDate < today && nowTime >= vacuumTime)
         {
-            await RunVacuumAsync(ct).ConfigureAwait(false);
+            if (nowTime - vacuumTime <= VacuumWindow)
+            {
+                await RunVacuumAsync(ct).ConfigureAwait(false);
+            }
+            else
+            {
+                _logger.LogInformation(
+                    "已过今天的数据库整理时段({Time} 起 {Window} 内),跳过,明天再做", vacuumTime, VacuumWindow);
+            }
             _lastVacuumDate = today;
+            await SaveDateAsync(LastVacuumKey, today, ct).ConfigureAwait(false);
         }
 
         var backupTime = TimeOnly.Parse(_options.BackupTime, CultureInfo.InvariantCulture);
@@ -128,7 +162,34 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
         {
             await RunBackupAsync(today, ct).ConfigureAwait(false);
             _lastBackupDate = today;
+            await SaveDateAsync(LastBackupKey, today, ct).ConfigureAwait(false);
         }
+    }
+
+    private async Task<DateOnly> ReadDateAsync(string key, CancellationToken ct)
+    {
+        await using var conn = _factory.OpenRead();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = "SELECT Value FROM AppConfig WHERE Key = $key;";
+        cmd.Parameters.AddWithValue("$key", key);
+        var value = await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false) as string;
+        return DateOnly.TryParseExact(value, "yyyy-MM-dd", CultureInfo.InvariantCulture, DateTimeStyles.None, out var date)
+            ? date
+            : DateOnly.MinValue;
+    }
+
+    private async Task SaveDateAsync(string key, DateOnly date, CancellationToken ct)
+    {
+        await using var conn = _factory.OpenWrite();
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = """
+            INSERT INTO AppConfig (Key, Value, UpdatedAt) VALUES ($key, $value, $now)
+            ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value, UpdatedAt = excluded.UpdatedAt;
+            """;
+        cmd.Parameters.AddWithValue("$key", key);
+        cmd.Parameters.AddWithValue("$value", date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture));
+        cmd.Parameters.AddWithValue("$now", _clock.GetUtcNow().UtcDateTime.ToString("O", CultureInfo.InvariantCulture));
+        await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
     }
 
     // ── VACUUM ──────────────────────────────────────────────────────
@@ -140,26 +201,61 @@ public sealed class DatabaseMaintenanceHostedService : IHostedService, IAsyncDis
         {
             await using var conn = _factory.OpenWrite();
 
-            // VACUUM 前先 checkpoint(TRUNCATE):把 WAL 已提交内容并回主库并清空 -wal 文件,
+            // 先 checkpoint(TRUNCATE):把 WAL 已提交内容并回主库并清空 -wal 文件,
             // 防止长期 7×24 运行 WAL 无界增长(SQLite 自动 checkpoint 在有长读事务时可能迟迟不截断)。
-            await using (var checkpoint = conn.CreateCommand())
+            await CheckpointAsync(conn, ct).ConfigureAwait(false);
+
+            var pageCount = await ScalarAsync(conn, "PRAGMA page_count;", ct).ConfigureAwait(false);
+            var freePages = await ScalarAsync(conn, "PRAGMA freelist_count;", ct).ConfigureAwait(false);
+            var freeRatio = pageCount == 0 ? 0 : (double)freePages / pageCount;
+            if (freeRatio < VacuumFreePageRatio)
             {
-                checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
-                checkpoint.CommandTimeout = 120;
-                await checkpoint.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+                _logger.LogInformation(
+                    "数据库整理 · WAL checkpoint 完成,空闲页 {Ratio:P0} 低于 {Threshold:P0},无需 VACUUM",
+                    freeRatio, VacuumFreePageRatio);
+                return;
             }
 
-            await using var cmd = conn.CreateCommand();
-            cmd.CommandText = "VACUUM;";
-            cmd.CommandTimeout = 600; // 10 分钟,大库 VACUUM 可能慢
-            await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            // VACUUM 会复制整个数据库:临时数据写磁盘,不要放内存(连接默认 temp_store=MEMORY,大库会占用大量内存)。
+            // 连接工厂每次取连接都会重新设置 temp_store,这里改了不影响其它连接。
+            await using (var tempStore = conn.CreateCommand())
+            {
+                tempStore.CommandText = "PRAGMA temp_store=FILE;";
+                await tempStore.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
 
-            _logger.LogInformation("VACUUM(含 WAL checkpoint)完成 · 耗时 {Elapsed}", sw.Elapsed);
+            await using (var cmd = conn.CreateCommand())
+            {
+                cmd.CommandText = "VACUUM;";
+                cmd.CommandTimeout = 600; // 10 分钟,大库 VACUUM 可能慢
+                await cmd.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+            }
+
+            // WAL 模式下 VACUUM 把整个库写进 WAL,再 checkpoint 一次把 -wal 文件截断
+            await CheckpointAsync(conn, ct).ConfigureAwait(false);
+
+            _logger.LogInformation(
+                "VACUUM 完成 · 回收空闲页 {Ratio:P0} · 耗时 {Elapsed}", freeRatio, sw.Elapsed);
         }
         catch (Exception ex)
         {
             _logger.LogError(ex, "VACUUM 失败 · 耗时 {Elapsed}", sw.Elapsed);
         }
+    }
+
+    private static async Task CheckpointAsync(SqliteConnection conn, CancellationToken ct)
+    {
+        await using var checkpoint = conn.CreateCommand();
+        checkpoint.CommandText = "PRAGMA wal_checkpoint(TRUNCATE);";
+        checkpoint.CommandTimeout = 120;
+        await checkpoint.ExecuteNonQueryAsync(ct).ConfigureAwait(false);
+    }
+
+    private static async Task<long> ScalarAsync(SqliteConnection conn, string sql, CancellationToken ct)
+    {
+        await using var cmd = conn.CreateCommand();
+        cmd.CommandText = sql;
+        return Convert.ToInt64(await cmd.ExecuteScalarAsync(ct).ConfigureAwait(false), CultureInfo.InvariantCulture);
     }
 
     // ── 备份 + 清理 ─────────────────────────────────────────────────

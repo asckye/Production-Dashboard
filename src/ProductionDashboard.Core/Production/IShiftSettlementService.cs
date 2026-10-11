@@ -14,4 +14,10 @@ public interface IShiftSettlementService
     /// 失败会导致该班次最终汇总永久缺失,因此不向上抛,而是留痕 + 弹 UI 告警。
     /// </summary>
     Task SettleAsync(ShiftAssignment shift, CancellationToken cancellationToken);
+
+    /// <summary>
+    /// 补结算还没结算、但时段已经结束的班次(程序在交接班时没有运行,班次切换事件就不会触发结算)。
+    /// <paramref name="current"/> 是正在进行的班次,会被跳过。启动时调用一次。
+    /// </summary>
+    Task SettleUnfinishedAsync(ShiftAssignment? current, CancellationToken cancellationToken);
 }

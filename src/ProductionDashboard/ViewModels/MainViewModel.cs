@@ -146,6 +146,7 @@ public sealed partial class MainViewModel : ObservableObject
 
         _teamAssign.AssignmentsChanged += OnAssignmentsChanged;
         _shifts.DefinitionsChanged += OnAssignmentsChanged;
+        _shifts.ShiftChanged += (_, _) => Application.Current.Dispatcher.InvokeAsync(UpdateCurrentShiftText);
         OnAssignmentsChanged();   // 启动期立刻刷一次顶栏
 
         Dashboard.Hero.PropertyChanged += (_, e) =>
@@ -176,33 +177,44 @@ public sealed partial class MainViewModel : ObservableObject
         TimeText = now.ToString("HH:mm:ss");
     }
 
+    /// <summary>
+    /// 顶栏"当前班次"徽章:显示实际正在进行的班次(不限于参与对比的两个),有班组时显示班组名。
+    /// </summary>
     private void UpdateCurrentShiftText()
     {
-        if (Dashboard.Hero.AIsActive) CurrentShiftText = $"当前班次 {Dashboard.Hero.ATeamLabel}";
-        else if (Dashboard.Hero.BIsActive) CurrentShiftText = $"当前班次 {Dashboard.Hero.BTeamLabel}";
-        else CurrentShiftText = "当前班次 空档期";
+        var current = _shifts.Current;
+        if (current is null)
+        {
+            CurrentShiftText = "当前班次 空档期";
+            return;
+        }
+        var team = _teamAssign.GetTeamForSlot(current.Definition.Id);
+        CurrentShiftText = team is null
+            ? $"当前班次 {current.Definition.Name}(未分配班组)"
+            : $"当前班次 {team.Name}";
     }
 
     private void OnAssignmentsChanged()
     {
         Application.Current.Dispatcher.InvokeAsync(() =>
         {
-            var defs = _shifts.Definitions;
-            var aDef = defs.FirstOrDefault(d => d.Code == "A");
-            var bDef = defs.FirstOrDefault(d => d.Code == "B");
-
-            var aTeam = aDef is null ? null : _teamAssign.GetTeamForSlot(aDef.Id);
-            var bTeam = bDef is null ? null : _teamAssign.GetTeamForSlot(bDef.Id);
-
-            DaySlotTeamText = aTeam is null
-                ? "白班 [未分配班组]"
-                : $"白班 · {aTeam.Name} (班长:{aTeam.LeaderName})";
-            NightSlotTeamText = bTeam is null
-                ? "夜班 [未分配班组]"
-                : $"夜班 · {bTeam.Name} (班长:{bTeam.LeaderName})";
+            var (aDef, bDef) = ComparedShifts.Pick(_shifts.Definitions);
+            DaySlotTeamText = SlotText(aDef);
+            NightSlotTeamText = SlotText(bDef);
+            UpdateCurrentShiftText();
 
             SwapShiftsCommand.NotifyCanExecuteChanged();
         });
+    }
+
+    /// <summary>顶栏班组槽位文字,例如"白班 · A 班 (班长:张三)"。</summary>
+    private string SlotText(ShiftDefinition? definition)
+    {
+        if (definition is null) return "—";
+        var team = _teamAssign.GetTeamForSlot(definition.Id);
+        return team is null
+            ? $"{definition.Name} [未分配班组]"
+            : $"{definition.Name} · {team.Name} (班长:{team.LeaderName})";
     }
 
     private bool _wasAuthenticated;
@@ -286,12 +298,10 @@ public sealed partial class MainViewModel : ObservableObject
         }
 
         // 二次确认 — 把对调前后内容明白展示
-        var defs = _shifts.Definitions;
-        var aDef = defs.FirstOrDefault(d => d.Code == "A");
-        var bDef = defs.FirstOrDefault(d => d.Code == "B");
+        var (aDef, bDef) = ComparedShifts.Pick(_shifts.Definitions);
         if (aDef is null || bDef is null)
         {
-            _toast.ShowWarning("白班/夜班定义不完整,无法对调");
+            _toast.ShowWarning("班次定义不足两个,无法对调");
             return;
         }
         var aTeam = _teamAssign.GetTeamForSlot(aDef.Id);
@@ -310,7 +320,7 @@ public sealed partial class MainViewModel : ObservableObject
         {
             await _teamAssign.SwapTwoSlotsAsync(_auth.CurrentOperator!, CancellationToken.None);
             _toast.ShowSuccess(
-                $"倒班完成 · 白班 {bTeam.Name} / 夜班 {aTeam.Name}",
+                $"倒班完成 · {aDef.Name} {bTeam.Name} / {bDef.Name} {aTeam.Name}",
                 title: $"操作员 {_auth.CurrentOperator}");
         }
         catch (Exception ex)

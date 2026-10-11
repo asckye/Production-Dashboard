@@ -10,23 +10,71 @@ public sealed class ShiftSettlementService : IShiftSettlementService
 {
     private readonly IShiftSummaryRepository _summaries;
     private readonly IProductionAnalyticsRepository _analytics;
+    private readonly IShiftDefinitionRepository _shiftDefinitions;
     private readonly IExcelExportService _excel;
     private readonly IGlobalExceptionHandler _exceptionHandler;
     private readonly ILogger<ShiftSettlementService> _logger;
+    private readonly TimeProvider _clock;
 
-    /// <summary>注入汇总仓库 / 分析仓库 / Excel 导出 / 全局异常告警 / 日志。</summary>
+    /// <summary>注入汇总仓库 / 分析仓库 / 班次定义 / Excel 导出 / 全局异常告警 / 日志。<paramref name="clock"/> 可注入测试时钟。</summary>
     public ShiftSettlementService(
         IShiftSummaryRepository summaries,
         IProductionAnalyticsRepository analytics,
+        IShiftDefinitionRepository shiftDefinitions,
         IExcelExportService excel,
         IGlobalExceptionHandler exceptionHandler,
-        ILogger<ShiftSettlementService> logger)
+        ILogger<ShiftSettlementService> logger,
+        TimeProvider? clock = null)
     {
         _summaries = summaries;
         _analytics = analytics;
+        _shiftDefinitions = shiftDefinitions;
         _excel = excel;
         _exceptionHandler = exceptionHandler;
         _logger = logger;
+        _clock = clock ?? TimeProvider.System;
+    }
+
+    /// <inheritdoc/>
+    public async Task SettleUnfinishedAsync(ShiftAssignment? current, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<ShiftSummary> unfinished;
+        try
+        {
+            unfinished = await _summaries.GetUnfinishedShiftSummariesAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError(ex, "查询未结算的班次失败,跳过补结算");
+            return;
+        }
+
+        var nowLocal = _clock.GetLocalNow().DateTime;
+        foreach (var shift in unfinished.GroupBy(s => (s.ShiftDate, s.ShiftDefId)))
+        {
+            var (shiftDate, shiftDefId) = shift.Key;
+            if (current is not null && current.ShiftDate == shiftDate && current.Definition.Id == shiftDefId)
+            {
+                continue;   // 正在进行的班次
+            }
+
+            var definition = await _shiftDefinitions.GetShiftDefinitionAsync(shiftDefId, cancellationToken)
+                .ConfigureAwait(false);
+            if (definition is null)
+            {
+                _logger.LogWarning("补结算跳过 · 找不到班次定义 Id={ShiftDefId} @ {Date}", shiftDefId, shiftDate);
+                continue;
+            }
+
+            var periodStart = shift.Min(s => s.StartTime);
+            var periodEnd = periodStart + definition.Duration;
+            if (periodEnd > nowLocal) continue;   // 时段还没结束
+
+            _logger.LogInformation(
+                "补结算交接班时程序未运行的班次 · {Shift} @ {Date}", definition.Code, shiftDate);
+            await SettleAsync(new ShiftAssignment(definition, shiftDate, periodStart, periodEnd), cancellationToken)
+                .ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>
@@ -87,8 +135,9 @@ public sealed class ShiftSettlementService : IShiftSettlementService
             //    多班组场景在 Excel 里以 Remark 备注哪些班组共同贡献。后续可改成多 sheet。
             try
             {
-                var hourly = await _analytics.GetHourlyCountsForDateAsync(
-                    shift.ShiftDate, cancellationToken).ConfigureAwait(false);
+                // 只统计本班次时段:夜班跨日,按"班次日期"那一整天统计会混进白班和下一个夜班
+                var hourly = await _analytics.GetHourlyCountsInRangeAsync(
+                    fromUtc, toUtc, cancellationToken).ConfigureAwait(false);
 
                 if (summaries.Count > 0)
                 {

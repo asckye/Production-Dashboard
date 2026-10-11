@@ -212,6 +212,8 @@ Any shift pattern is supported, for example:
 
 **Cross-midnight rule**: a night shift from 20:00 to 08:00 the next day is attributed to its **end date** by default (`Shift.AttributionRule = EndDate`). So "today's night shift" means the one that ended this morning, which matches how shop-floor staff usually talk about it.
 
+**Shift comparison**: the two comparison cards on the dashboard show the first two shifts by display order (day + night by default). With three or more shifts, the others are still counted, and the running shift appears in the hero number and the top bar's current-shift badge.
+
 **Shift swap**: performed by a logged-in team leader and audited. In the top bar, click **🔑 班长登录** (Leader Login) → **⇄ 倒班切换** (Swap Shifts) → confirm swapping day ↔ night. Teams keep their own running totals, so production stays attributed to the right team.
 
 ---
@@ -222,16 +224,16 @@ Any shift pattern is supported, for example:
 dotnet test
 ```
 
-All **257 tests pass**. Main coverage:
+All **276 tests pass**. Main coverage:
 
 | Module | Coverage |
 |---|---|
-| ShiftCalculator / ShiftDefinition / ShiftCoverage | same-day / cross-midnight / 1–N shifts / attribution rules / shift length / edge cases / minute-by-minute coverage check (gaps, overlaps) |
+| ShiftCalculator / ShiftDefinition / ShiftCoverage / ComparedShifts | same-day / cross-midnight / 1–N shifts / attribution rules (incl. ending at 24:00) / shift length / edge cases / minute-by-minute coverage check (gaps, overlaps) / picking the compared shifts |
 | ProductionPeriods / target rules | "this hour" at the local full hour (incl. half-hour time zones) / weeks start on Monday / month and year rollover / week, month and year targets |
-| CountingService / MinuteAggregator / shift settlement | attribution by signal timestamp / shift change / team attribution after a swap / per-minute rollup with catch-up / Excel export |
+| CountingService / MinuteAggregator / shift settlement | attribution by signal timestamp / shift change / team attribution after a swap / retrying failed writes / per-minute rollup with catch-up / settling shifts missed during downtime / Excel export |
 | TeamAssignment / AuthService | team assignment and swaps / leader login / idle timeout / lockout |
-| Repository integration / yearly archive | CRUD + time windows + peak hour for each repository / transactional shift-config save / purge safeguards, never overwriting an earlier archive (real SQLite) |
-| S7Address / HandshakeDecoder / ReconnectBackoff | S7 address parsing / sequence wrap-around / crash re-entry / counter reset / reconnect backoff |
+| Repository integration / yearly archive / database maintenance | CRUD + time windows + peak hour for each repository / transactional shift-config save / purge safeguards, never overwriting an earlier archive / VACUUM scheduling (real SQLite) |
+| S7Address / HandshakeDecoder / EdgeDetector / ReconnectBackoff | S7 address parsing / sequence wrap-around / crash re-entry / counter reset / rising-edge debounce / re-aligning after reconnect / reconnect backoff |
 | ViewModel presentation logic / UI scaling | trend text / bar normalization / leader detection / shift editor helpers / proportional scaling from 1920×1080 |
 | AlertThrottle | alert throttling: first report passes, repeats within the interval are suppressed, only one concurrent caller passes |
 | Layering rules (LayeringTests) | Core has no WPF / database / PLC dependency; ViewModels never call repositories |

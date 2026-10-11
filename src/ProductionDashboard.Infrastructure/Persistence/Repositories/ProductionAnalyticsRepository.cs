@@ -84,13 +84,14 @@ public sealed class ProductionAnalyticsRepository : IProductionAnalyticsReposito
     public async Task<int> ComputePeakHourCountAsync(
         DateOnly shiftDate, int shiftDefId, CancellationToken cancellationToken)
     {
-        // 按 ISO 时间戳前缀 (yyyy-MM-ddTHH) 分桶 -> 取最大值
+        // 按本地整点分桶 -> 取最大值。时间戳存的是 UTC,不能直接截取前 13 位分桶:
+        // 在 UTC+5:30 这类非整点时区,UTC 的整点和本地整点错开半小时
         const string sql = """
             SELECT COALESCE(MAX(c), 0) FROM (
                 SELECT COUNT(*) AS c
                 FROM ProductionEvent
                 WHERE ShiftDate = @shiftDate AND ShiftDefId = @shiftDefId
-                GROUP BY substr(Timestamp, 1, 13)
+                GROUP BY strftime('%Y-%m-%dT%H', Timestamp, 'localtime')
             );
             """;
 
@@ -107,12 +108,18 @@ public sealed class ProductionAnalyticsRepository : IProductionAnalyticsReposito
     public async Task<IReadOnlyList<int>> GetHourlyCountsForDateAsync(
         DateOnly localDate, CancellationToken cancellationToken)
     {
-        // 用本地时区的 [date 00:00, date+1 00:00) UTC 区间过滤,然后用 strftime('%H')
-        // 分组到 24 个小时桶。
+        // 本地时区的 [date 00:00, date+1 00:00)
         var localMidnight = localDate.ToDateTime(TimeOnly.MinValue);
         var fromUtc = localMidnight.ToUniversalTime();
         var toUtc = fromUtc.AddDays(1);
+        return await GetHourlyCountsInRangeAsync(fromUtc, toUtc, cancellationToken).ConfigureAwait(false);
+    }
 
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<int>> GetHourlyCountsInRangeAsync(
+        DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken)
+    {
+        // 用 UTC 区间过滤,再用 strftime('%H', ..., 'localtime') 分组到 24 个本地小时桶。
         const string sql = """
             SELECT CAST(strftime('%H', Timestamp, 'localtime') AS INTEGER) AS Hour,
                    COUNT(*) AS Cnt
@@ -304,7 +311,7 @@ public sealed class ProductionAnalyticsRepository : IProductionAnalyticsReposito
         // 外层:对每个 TeamId 取 MAX(c)
         const string sql = """
             SELECT TeamId, COALESCE(MAX(c), 0) AS PeakC FROM (
-                SELECT TeamId, substr(Timestamp, 1, 13) AS HourBucket, COUNT(*) AS c
+                SELECT TeamId, strftime('%Y-%m-%dT%H', Timestamp, 'localtime') AS HourBucket, COUNT(*) AS c
                 FROM ProductionEvent
                 WHERE ShiftDate = @shiftDate AND ShiftDefId = @shiftDefId AND TeamId IS NOT NULL
                 GROUP BY TeamId, HourBucket

@@ -210,6 +210,8 @@ AuditLog                    操作留痕
 
 **跨日规则**:夜班 20:00 → 次日 08:00,默认归属「结束日」(`Shift.AttributionRule = EndDate`,这样「今天的夜班数据」就是「今天早上结束那一波」,符合现场口语习惯)。
 
+**班次实时对比** — 大屏的两张对比卡片显示排序最靠前的两个班次(默认白班 + 夜班)。三班及以上时,其余班次照常计数,进行中的班次显示在 Hero 大数字和顶栏「当前班次」。
+
 **倒班** — 由班长登录后操作,带审计:顶栏「🔑 班长登录」→「⇄ 倒班切换」→ 确认「白班 ↔ 夜班」对调 → 班组跟人走,数据归属正确切换。
 
 ---
@@ -220,16 +222,16 @@ AuditLog                    操作留痕
 dotnet test
 ```
 
-当前 **257 个测试全部通过**。主要覆盖:
+当前 **276 个测试全部通过**。主要覆盖:
 
 | 模块 | 覆盖范围 |
 |---|---|
-| ShiftCalculator / ShiftDefinition / ShiftCoverage | 同日 / 跨日 / 1-N 班 / 归属规则 / 班次时长 / 边界 / 逐分钟覆盖检测(空档、重叠) |
+| ShiftCalculator / ShiftDefinition / ShiftCoverage / ComparedShifts | 同日 / 跨日 / 1-N 班 / 归属规则(含 24:00 结束)/ 班次时长 / 边界 / 逐分钟覆盖检测(空档、重叠)/ 对比卡片选班 |
 | ProductionPeriods / 目标换算 | 本小时按本地整点(含非整点时区)/ 周一为周起点 / 跨月跨年 / 周月年目标 |
-| CountingService / MinuteAggregator / 班次结算 | 信号按时间戳归属 / 班次切换 / 倒班数据归属 / 分钟聚合补漏 / Excel 导出 |
+| CountingService / MinuteAggregator / 班次结算 | 信号按时间戳归属 / 班次切换 / 倒班数据归属 / 落库失败重试 / 分钟聚合补漏 / 停机后补结算 / Excel 导出 |
 | TeamAssignment / AuthService | 班组分配与倒班 / 班长登录 / 空闲超时 / 失败锁定 |
-| Repository 集成 / 年度归档 | 各仓库 CRUD + 时间窗 + 峰值小时 / 班次配置事务保存 / 归档清库保护、不覆盖旧归档(真实 SQLite) |
-| S7Address / HandshakeDecoder / ReconnectBackoff | S7 地址解析 / 序号回卷 / 崩溃重入 / 计数器复位 / 重连退避 |
+| Repository 集成 / 年度归档 / 数据库维护 | 各仓库 CRUD + 时间窗 + 峰值小时 / 班次配置事务保存 / 归档清库保护、不覆盖旧归档 / VACUUM 调度(真实 SQLite) |
+| S7Address / HandshakeDecoder / EdgeDetector / ReconnectBackoff | S7 地址解析 / 序号回卷 / 崩溃重入 / 计数器复位 / 上升沿去抖 / 重连对齐 / 重连退避 |
 | ViewModel 展示逻辑 / 界面缩放 | 趋势文字 / 柱图归一化 / 领先判定 / 班次编辑辅助函数 / 按 1920×1080 等比缩放 |
 | AlertThrottle | 告警限流:首次放行、间隔内抑制、并发只放行一次 |
 | 分层规则(LayeringTests) | Core 不依赖 WPF / 数据库 / PLC;ViewModel 不直接访问仓库 |

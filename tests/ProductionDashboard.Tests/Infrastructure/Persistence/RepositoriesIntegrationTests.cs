@@ -349,6 +349,51 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// 已结算的汇总不能被"进行中"的周期刷新覆盖(班次切换瞬间刷新可能晚于结算写入);再次结算仍可更新。
+    /// </summary>
+    [Fact]
+    public async Task UpsertShiftSummary_in_progress_update_never_overwrites_a_settled_row()
+    {
+        var d = new DateOnly(2026, 5, 19);
+        var start = d.ToDateTime(new TimeOnly(8, 0));
+        var settled = new ShiftSummary(d, 1, 1, "白班", start, start.AddHours(12), 1500, 1200, 150, null);
+
+        await _summaries.UpsertShiftSummaryAsync(settled, CancellationToken.None);
+        await _summaries.UpsertShiftSummaryAsync(
+            settled with { EndTime = null, ActualCount = 3, PeakHourCount = null }, CancellationToken.None);
+
+        var row = await _summaries.GetShiftSummaryAsync(d, 1, 1, CancellationToken.None);
+        row!.EndTime.Should().NotBeNull("进行中的刷新不能把已结算的行改回进行中");
+        row.ActualCount.Should().Be(1200);
+
+        await _summaries.UpsertShiftSummaryAsync(settled with { ActualCount = 1210 }, CancellationToken.None);
+        (await _summaries.GetShiftSummaryAsync(d, 1, 1, CancellationToken.None))!.ActualCount.Should().Be(1210);
+    }
+
+    /// <summary>按时间区间统计每小时产量:只统计区间内的事件,按本地小时分桶。</summary>
+    [Fact]
+    public async Task GetHourlyCountsInRange_counts_only_events_inside_the_range()
+    {
+        var d = new DateOnly(2026, 5, 19);
+        DateTime Local(int day, int hour, int minute) => d.AddDays(day).ToDateTime(new TimeOnly(hour, minute)).ToUniversalTime();
+        await _events.InsertEventsAsync(
+        [
+            new ProductionEvent(0, Local(0, 19, 30), d, 1, 1),   // 区间前
+            new ProductionEvent(0, Local(0, 20, 30), d, 2, 2),
+            new ProductionEvent(0, Local(0, 23, 30), d, 2, 2),
+            new ProductionEvent(0, Local(1, 1, 30), d, 2, 2),
+            new ProductionEvent(0, Local(1, 8, 30), d, 1, 1),    // 区间后
+        ], CancellationToken.None);
+
+        var hourly = await _analytics.GetHourlyCountsInRangeAsync(Local(0, 20, 0), Local(1, 8, 0), CancellationToken.None);
+
+        hourly.Sum().Should().Be(3);
+        hourly[20].Should().Be(1);
+        hourly[23].Should().Be(1);
+        hourly[1].Should().Be(1);
+    }
+
+    /// <summary>
     /// ShiftDefinition 的 StartTime/EndTime(TimeOnly)经 DB("HH:mm" TEXT)往返应保真,
     /// 含非整点 + 跨日。验证 Repository 边界的 ToString/ParseExact 转换正确。
     /// </summary>

@@ -72,6 +72,10 @@ public sealed class AggregationHostedService : IHostedService, IAsyncDisposable
             dueTime: SummaryRefreshInterval,
             period: SummaryRefreshInterval);
 
+        // 补结算交接班时程序没有运行而错过的班次(班次切换事件只在运行时触发)
+        var current = _shifts.Current;
+        FireAndForget(() => _settlement.SettleUnfinishedAsync(current, CancellationToken.None));
+
         _logger.LogInformation(
             "AggregationHostedService 启动 · 分钟聚合每 {Min} · 汇总刷新每 {Sec}",
             MinuteAggregationInterval, SummaryRefreshInterval);

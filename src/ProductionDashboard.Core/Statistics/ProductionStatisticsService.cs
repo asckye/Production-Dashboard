@@ -96,11 +96,9 @@ public sealed class ProductionStatisticsService : IProductionStatisticsService
         var nowLocal = _clock.GetLocalNow().DateTime;
         var nowUtc = _clock.GetUtcNow().UtcDateTime;
 
-        var definitions = _shifts.Definitions;
-        var dayShift = await CountMostRecentPeriodAsync(
-            definitions.FirstOrDefault(d => d.Code == "A"), nowLocal, cancellationToken).ConfigureAwait(false);
-        var nightShift = await CountMostRecentPeriodAsync(
-            definitions.FirstOrDefault(d => d.Code == "B"), nowLocal, cancellationToken).ConfigureAwait(false);
+        var (first, second) = ComparedShifts.Pick(_shifts.Definitions);
+        var dayShift = await CountMostRecentPeriodAsync(first, nowLocal, cancellationToken).ConfigureAwait(false);
+        var nightShift = await CountMostRecentPeriodAsync(second, nowLocal, cancellationToken).ConfigureAwait(false);
 
         // 节拍 = 最近 5 分钟产量 / 5(按事件时间,跨班次、跨日连续)
         var lastFiveMinutes = await _repository.CountEventsInRangeAsync(

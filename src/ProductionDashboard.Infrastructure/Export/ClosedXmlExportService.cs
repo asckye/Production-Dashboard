@@ -52,7 +52,7 @@ public sealed class ClosedXmlExportService : IExcelExportService
 
             // Sheet 2: 每小时产量
             var s2 = wb.Worksheets.Add("每小时产量");
-            WriteHourlyCountsSheet(s2, hourlyCounts);
+            WriteHourlyCountsSheet(s2, summary, hourlyCounts);
 
             wb.SaveAs(path);
         }, cancellationToken).ConfigureAwait(false);
@@ -155,16 +155,31 @@ public sealed class ClosedXmlExportService : IExcelExportService
         s.Columns().AdjustToContents();
     }
 
-    private static void WriteHourlyCountsSheet(IXLWorksheet s, IReadOnlyList<int> hourly)
+    /// <summary>
+    /// 每小时产量。<paramref name="hourly"/> 按本地小时 0–23 索引;
+    /// 已结束的班次只列出本班次覆盖的小时,并按时间顺序排列(夜班从 20:00 排到次日 07:00)。
+    /// </summary>
+    private static void WriteHourlyCountsSheet(IXLWorksheet s, ShiftSummary summary, IReadOnlyList<int> hourly)
     {
         s.Cell("A1").Value = "小时";
         s.Cell("B1").Value = "产量(件)";
         s.Range("A1:B1").Style.Font.Bold = true;
 
-        for (var i = 0; i < hourly.Count; i++)
+        var firstHour = 0;
+        var hourCount = 24;
+        if (summary.EndTime is { } end)
         {
-            s.Cell(i + 2, 1).Value = $"{i:D2}:00";
-            s.Cell(i + 2, 2).Value = hourly[i];
+            var start = summary.StartTime;
+            var firstHourStart = new DateTime(start.Year, start.Month, start.Day, start.Hour, 0, 0, start.Kind);
+            firstHour = start.Hour;
+            hourCount = Math.Clamp((int)Math.Ceiling((end - firstHourStart).TotalHours), 1, 24);
+        }
+
+        for (var i = 0; i < hourCount; i++)
+        {
+            var hour = (firstHour + i) % 24;
+            s.Cell(i + 2, 1).Value = $"{hour:D2}:00";
+            s.Cell(i + 2, 2).Value = hour < hourly.Count ? hourly[hour] : 0;
         }
         s.Columns().AdjustToContents();
     }

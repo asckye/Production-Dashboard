@@ -28,4 +28,7 @@ public interface IShiftSummaryRepository
     /// </summary>
     Task<IReadOnlyList<ShiftSummary>> GetShiftSummariesInRangeAsync(
         DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken);
+
+    /// <summary>还没结算的汇总行(EndTime 为空)。启动时用来补结算停机期间结束的班次。</summary>
+    Task<IReadOnlyList<ShiftSummary>> GetUnfinishedShiftSummariesAsync(CancellationToken cancellationToken);
 }

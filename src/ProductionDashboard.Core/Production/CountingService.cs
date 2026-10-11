@@ -14,7 +14,7 @@ namespace ProductionDashboard.Core.Production;
 ///   <item>根据信号时间戳(<see cref="IShiftManager.GetShiftAt"/>)判定信号归属哪个班次槽位</item>
 ///   <item>根据 <see cref="ITeamAssignmentService.GetTeamForSlot"/> 判定信号归属哪个班组</item>
 ///   <item>内存按 TeamId 分桶累计(<see cref="_countsByTeam"/>),毫秒级读</item>
-///   <item>事件经 <see cref="Channel{T}"/> 异步批量写入数据库,带 TeamId 落库</item>
+///   <item>事件经 <see cref="Channel{T}"/> 异步批量写入数据库,带 TeamId 落库;写入失败按退避重试,不丢弃</item>
 ///   <item>班次周期切换时计数器清零,从 DB 复盘新周期已有数据</item>
 ///   <item>倒班(分配变更)时<b>不清</b>计数 — 各班组累计跟人走</item>
 ///   <item>启动期从 DB 恢复当前班次周期内每个班组的累计</item>
@@ -24,6 +24,7 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
 {
     private const int ChannelCapacity = 10_000;
     private const int MaxBatchSize = 256;
+    private static readonly TimeSpan MaxRetryDelay = TimeSpan.FromSeconds(30);
 
     private readonly IPlcService _plc;
     private readonly IShiftManager _shifts;
@@ -43,6 +44,13 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
     private readonly AlertThrottle _drainAlerts = new(AlertInterval);
 
     private Dictionary<int, int> _countsByTeam = new();
+
+    // 已计入内存、但还没写进数据库的事件数,按 (班次日期, 班次, 班组) 分组。
+    // 从数据库重新加载累计时要把它们加回去,否则还在排队的事件会从屏幕数字上"消失"。
+    private readonly Dictionary<(DateOnly ShiftDate, int ShiftDefId, int TeamId), int> _unpersisted = new();
+
+    // 落库与"从数据库重新加载"互斥:保证加载时读到的数据库计数和 _unpersisted 是同一时刻的。
+    private readonly SemaphoreSlim _persistLock = new(1, 1);
     private long _droppedSignals;
     private long _signalsWithoutTeam;
     private Task? _drainTask;
@@ -197,17 +205,6 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
         // 内存计数只累计当前周期(界面 Hero 大数字显示的那个)。信号已属于下一个周期、
         // 但 ShiftManager 还没切换时,只落库不计内存:随后的班次切换会从数据库重新加载新周期的累计。
         var isCurrentPeriod = IsSamePeriod(shift, _shifts.Current);
-        var newCount = 0;
-        if (isCurrentPeriod)
-        {
-            lock (_gate)
-            {
-                _countsByTeam.TryGetValue(team.Id, out var cur);
-                newCount = cur + 1;
-                _countsByTeam[team.Id] = newCount;
-            }
-        }
-
         var evt = new ProductionEvent(
             Id: 0,
             Timestamp: utcNow,
@@ -216,7 +213,25 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
             TeamId: team.Id,
             Source: "PLC");
 
-        if (!_channel.Writer.TryWrite(evt))
+        var newCount = 0;
+        bool queued;
+        lock (_gate)
+        {
+            queued = _channel.Writer.TryWrite(evt);
+            if (queued)
+            {
+                var key = (evt.ShiftDate, evt.ShiftDefId, team.Id);
+                _unpersisted[key] = _unpersisted.GetValueOrDefault(key) + 1;
+            }
+            if (isCurrentPeriod)
+            {
+                _countsByTeam.TryGetValue(team.Id, out var cur);
+                newCount = cur + 1;
+                _countsByTeam[team.Id] = newCount;
+            }
+        }
+
+        if (!queued)
         {
             var dropped = Interlocked.Increment(ref _droppedSignals);
             // 内存计数已 +1,但落库被丢弃 → 内存与 DB 出现差值(重启 reload 会修正,但运行期不一致)。
@@ -304,15 +319,34 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
         // [PeriodStart, PeriodEnd) 是本地时间,DB 存 UTC,需要转换
         var fromUtc = current.PeriodStart.ToUniversalTime();
         var toUtc = current.PeriodEnd.ToUniversalTime();
-        var dict = await _analytics.CountEventsByTeamInRangeAsync(fromUtc, toUtc, cancellationToken)
-            .ConfigureAwait(false);
 
+        // 加载期间暂停落库,数据库计数和尚未落库的计数才是同一时刻的(否则会多算或少算)
         Dictionary<int, int> snapshot;
-        lock (_gate)
+        await _persistLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
         {
-            _countsByTeam = new Dictionary<int, int>(dict);
-            snapshot = new Dictionary<int, int>(_countsByTeam);
+            var persisted = await _analytics.CountEventsByTeamInRangeAsync(fromUtc, toUtc, cancellationToken)
+                .ConfigureAwait(false);
+
+            lock (_gate)
+            {
+                var counts = new Dictionary<int, int>(persisted);
+                foreach (var ((shiftDate, shiftDefId, teamId), pending) in _unpersisted)
+                {
+                    if (shiftDate == current.ShiftDate && shiftDefId == current.Definition.Id)
+                    {
+                        counts[teamId] = counts.GetValueOrDefault(teamId) + pending;
+                    }
+                }
+                _countsByTeam = counts;
+                snapshot = new Dictionary<int, int>(counts);
+            }
         }
+        finally
+        {
+            _persistLock.Release();
+        }
+
         foreach (var (teamId, count) in snapshot)
         {
             RaiseTeamCountChanged(teamId, count);
@@ -338,28 +372,89 @@ public sealed class CountingService : ICountingService, IHostedService, IAsyncDi
                     batch.Add(more);
                 }
 
-                try
-                {
-                    await _events.InsertEventsAsync(batch, ct).ConfigureAwait(false);
-                    _logger.LogDebug("批量落库 {Count} 条事件", batch.Count);
-                }
-                catch (OperationCanceledException)
-                {
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogError(ex,
-                        "批量落库失败,丢弃本批 {Count} 条事件 (内存计数器仍准确)", batch.Count);
-                    // 落库失败 = DB 在丢数据(磁盘满/锁/损坏),屏幕数字仍正常 → 必须告警 UI。
-                    if (_drainAlerts.ShouldReport()) _exceptionHandler.Report(ex, "CountingService.Drain");
-                }
+                await PersistWithRetryAsync(batch, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
             // 正常退出
         }
+    }
+
+    /// <summary>
+    /// 写入一批事件;失败时等待后重试同一批(1、2、4…秒,最长 <see cref="MaxRetryDelay"/>),不丢弃。
+    /// 写入是单事务的,重试不会重复写入;重试期间新的信号在通道里排队(容量 <see cref="ChannelCapacity"/> 条)。
+    /// </summary>
+    private async Task PersistWithRetryAsync(List<ProductionEvent> batch, CancellationToken ct)
+    {
+        var delay = TimeSpan.FromSeconds(1);
+        for (var attempt = 1; ; attempt++)
+        {
+            await _persistLock.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                await _events.InsertEventsAsync(batch, ct).ConfigureAwait(false);
+                MarkPersisted(batch);
+                if (attempt > 1)
+                {
+                    _logger.LogInformation("批量落库重试成功 · 第 {Attempt} 次 · {Count} 条事件", attempt, batch.Count);
+                }
+                else
+                {
+                    _logger.LogDebug("批量落库 {Count} 条事件", batch.Count);
+                }
+                return;
+            }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                LogUnsavedOnExit(batch.Count);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogError(ex,
+                    "批量落库失败(第 {Attempt} 次),{Delay} 后重试 · 本批 {Count} 条事件(内存计数仍准确)",
+                    attempt, delay, batch.Count);
+                // 落库失败 = 数据库出问题(磁盘满/锁/损坏),屏幕数字仍正常 → 必须告警 UI。
+                if (_drainAlerts.ShouldReport()) _exceptionHandler.Report(ex, "CountingService.Drain");
+            }
+            finally
+            {
+                _persistLock.Release();
+            }
+
+            try
+            {
+                await Task.Delay(delay, ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                LogUnsavedOnExit(batch.Count);
+                throw;
+            }
+            delay = delay + delay > MaxRetryDelay ? MaxRetryDelay : delay + delay;
+        }
+    }
+
+    /// <summary>一批事件已写入数据库,从"待落库"计数里扣除。</summary>
+    private void MarkPersisted(List<ProductionEvent> batch)
+    {
+        lock (_gate)
+        {
+            foreach (var e in batch)
+            {
+                var key = (e.ShiftDate, e.ShiftDefId, e.TeamId);
+                var left = _unpersisted.GetValueOrDefault(key) - 1;
+                if (left > 0) _unpersisted[key] = left;
+                else _unpersisted.Remove(key);
+            }
+        }
+    }
+
+    private void LogUnsavedOnExit(int inFlight)
+    {
+        var queued = _channel.Reader.CanCount ? _channel.Reader.Count : 0;
+        _logger.LogWarning("退出时数据库仍不可写,{Count} 条事件未能落库", inFlight + queued);
     }
 
     private void RaiseTeamCountChanged(int teamId, int count)

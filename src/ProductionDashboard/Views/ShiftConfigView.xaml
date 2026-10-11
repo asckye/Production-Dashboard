@@ -258,8 +258,12 @@
                                             <Border.Style>
                                                 <Style TargetType="Border">
                                                     <Style.Triggers>
+                                                        <!-- 已标记删除:灰显且不可再编辑,保存后生效;点「取消」可撤销 -->
                                                         <DataTrigger Binding="{Binding IsDeleted}" Value="True">
                                                             <Setter Property="Opacity" Value="0.45" />
+                                                            <Setter Property="IsEnabled" Value="False" />
+                                                            <Setter Property="ToolTip" Value="已标记删除,保存后生效" />
+                                                            <Setter Property="ToolTipService.ShowOnDisabled" Value="True" />
                                                         </DataTrigger>
                                                     </Style.Triggers>
                                                 </Style>

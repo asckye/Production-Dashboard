@@ -19,9 +19,8 @@ public sealed class Sharp7PlcService : PlcServiceBase
     private CancellationTokenSource? _cts;
     private Task? _pollTask;
     private S7Client? _client;
-    private bool _lastBit;
-    private DateTime _lastSignalAt = DateTime.MinValue;
-    private DateTime _lastHeartbeatAt = DateTime.MinValue;
+    private readonly EdgeDetector _edge;
+    private long? _lastHeartbeatAt;      // 单调时间戳,不受系统校时影响
     private short _heartbeatCounter;
 
     private volatile bool _connected;
@@ -33,6 +32,7 @@ public sealed class Sharp7PlcService : PlcServiceBase
     {
         _options = options.Value;
         _logger = logger;
+        _edge = new EdgeDetector(TimeSpan.FromMilliseconds(_options.DebounceMs));
         _signalAddr = S7Address.Parse(_options.CompleteSignalAddress);
         _heartbeatAddr = string.IsNullOrWhiteSpace(_options.HeartbeatAddress)
             ? null
@@ -146,7 +146,7 @@ public sealed class Sharp7PlcService : PlcServiceBase
                 }
 
                 backoff.Reset();
-                HandleBit(bit);
+                if (_edge.Sample(bit)) RaiseSignal(DateTime.UtcNow);
                 MaybeWriteHeartbeat();
 
                 await Task.Delay(pollDelay, ct).ConfigureAwait(false);
@@ -173,7 +173,7 @@ public sealed class Sharp7PlcService : PlcServiceBase
             if (rc == 0)
             {
                 _connected = true;
-                _lastBit = false;
+                _edge.Reset();   // 第一次读只对齐完成位状态,避免重连后误计一件
                 _logger.LogInformation(
                     "PLC 已连接 · {Ip} rack={Rack} slot={Slot}",
                     _options.IpAddress, _options.Rack, _options.Slot);
@@ -227,28 +227,13 @@ public sealed class Sharp7PlcService : PlcServiceBase
         return true;
     }
 
-    private void HandleBit(bool current)
-    {
-        if (current && !_lastBit)
-        {
-            // 上升沿
-            var now = DateTime.UtcNow;
-            var debounce = TimeSpan.FromMilliseconds(_options.DebounceMs);
-            if ((now - _lastSignalAt) >= debounce)
-            {
-                _lastSignalAt = now;
-                RaiseSignal(now);
-            }
-        }
-        _lastBit = current;
-    }
-
     private void MaybeWriteHeartbeat()
     {
         if (_heartbeatAddr is null || _client is null) return;
 
-        var now = DateTime.UtcNow;
-        if ((now - _lastHeartbeatAt).TotalMilliseconds < _options.HeartbeatIntervalMs)
+        var now = TimeProvider.System.GetTimestamp();
+        if (_lastHeartbeatAt is { } last
+            && TimeProvider.System.GetElapsedTime(last, now).TotalMilliseconds < _options.HeartbeatIntervalMs)
         {
             return;
         }

@@ -205,6 +205,39 @@ public sealed class CountingServiceTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// 数据库暂时写不进去(例如 VACUUM 锁库)时:事件不丢弃而是重试;期间从数据库重新加载累计
+    /// 也要把还没落库的事件算上,屏幕数字不能倒退。数据库恢复后全部补写进去。
+    /// </summary>
+    [Fact]
+    public async Task Events_are_retried_not_dropped_and_reload_keeps_unpersisted_counts()
+    {
+        var date = new DateOnly(2026, 5, 19);
+        var flaky = new FlakyEventRepository(_events) { Failing = true };
+        await using var sut = new CountingService(
+            _plc, _shifts, _teams, flaky, _analytics,
+            new GlobalExceptionHandler(NullLogger<GlobalExceptionHandler>.Instance),
+            NullLogger<CountingService>.Instance);
+        _shifts.Current = AAssignment(date);
+        _teams.Assign(slot: 1, MakeTeam(TeamIdA, "A 班"));
+        await sut.StartAsync(CancellationToken.None);
+
+        for (var i = 0; i < 5; i++) _plc.RaiseSignal();
+        await Task.Delay(200);
+
+        // 触发一次"清零 + 2 秒后从数据库重新加载"(和班次切换走同一条路径)
+        _shifts.TriggerShiftChange(_shifts.Current, _shifts.Current);
+        await Task.Delay(TimeSpan.FromSeconds(3));
+        sut.GetCountForTeam(TeamIdA).Should().Be(5, "数据库里还没有这 5 件,但它们还在排队落库,不能从屏幕上消失");
+
+        flaky.Failing = false;
+        await sut.StopAsync(CancellationToken.None);   // 等待重试写入完成
+
+        (await _analytics.CountEventsByTeamRangeAsync(date, date, TeamIdA, CancellationToken.None))
+            .Should().Be(5, "数据库恢复后重试写入,一件不丢");
+        flaky.FailedAttempts.Should().BeGreaterThan(0);
+    }
+
+    /// <summary>
     /// 班次交接后、ShiftManager 还没检测到切换的那一小段时间:信号按自己的时间戳记到新班次 / 新班组,
     /// 不能记到旧班次头上;旧班次的内存计数也不能增加。
     /// </summary>
@@ -313,6 +346,29 @@ public sealed class CountingServiceTests : IAsyncLifetime
     }
 
     // ── stubs ────────────────────────────────────────────────────────
+
+    /// <summary>可以模拟"数据库暂时写不进去"的事件仓库。</summary>
+    private sealed class FlakyEventRepository(IProductionEventRepository inner) : IProductionEventRepository
+    {
+        public volatile bool Failing;
+        public int FailedAttempts;
+
+        public Task<int> InsertEventsAsync(IEnumerable<ProductionEvent> events, CancellationToken cancellationToken)
+        {
+            if (Failing)
+            {
+                Interlocked.Increment(ref FailedAttempts);
+                throw new InvalidOperationException("database is locked");
+            }
+            return inner.InsertEventsAsync(events, cancellationToken);
+        }
+
+        public Task<int> RebuildMinuteAggregatesAsync(DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken) =>
+            inner.RebuildMinuteAggregatesAsync(fromUtc, toUtc, cancellationToken);
+
+        public Task<DateTime?> GetLatestAggregatedMinuteAsync(CancellationToken cancellationToken) =>
+            inner.GetLatestAggregatedMinuteAsync(cancellationToken);
+    }
 
     private sealed class StubPlcService : IPlcService
     {

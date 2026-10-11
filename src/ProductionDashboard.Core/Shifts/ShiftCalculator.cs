@@ -50,7 +50,10 @@ public static class ShiftCalculator
                 var endTomorrow = today.AddDays(1).ToDateTime(end);
                 if (localTime >= startToday && localTime < endTomorrow)
                 {
-                    var shiftDate = attributionRule == ShiftAttributionRule.StartDate
+                    // 结束在 00:00(例如 16:00–24:00)的班次整段都在开始那一天,归属开始日;
+                    // 按"结束日"规则会被算到第二天,与现场"今天的晚班"不符
+                    var endsAtMidnight = end == TimeOnly.MinValue;
+                    var shiftDate = attributionRule == ShiftAttributionRule.StartDate || endsAtMidnight
                         ? today
                         : today.AddDays(1);
                     return new ShiftAssignment(shift, shiftDate, startToday, endTomorrow);

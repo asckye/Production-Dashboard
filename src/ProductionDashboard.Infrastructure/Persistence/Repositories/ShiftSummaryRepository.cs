@@ -33,7 +33,10 @@ public sealed class ShiftSummaryRepository : IShiftSummaryRepository
                 TargetCount   = excluded.TargetCount,
                 ActualCount   = excluded.ActualCount,
                 PeakHourCount = excluded.PeakHourCount,
-                Remark        = excluded.Remark;
+                Remark        = excluded.Remark
+            -- 已结算的行(EndTime 非空)不能被"进行中"的刷新覆盖:
+            -- 班次切换瞬间,周期刷新可能还拿着旧班次和新周期的计数,晚于结算写入就会把结算结果冲掉
+            WHERE excluded.EndTime IS NOT NULL OR ShiftSummary.EndTime IS NULL;
             """;
 
         await using var conn = _factory.OpenWrite();
@@ -121,6 +124,23 @@ public sealed class ShiftSummaryRepository : IShiftSummaryRepository
             },
             cancellationToken: cancellationToken));
 
+        return rows.Select(MapSummary).ToArray();
+    }
+
+    /// <inheritdoc/>
+    public async Task<IReadOnlyList<ShiftSummary>> GetUnfinishedShiftSummariesAsync(CancellationToken cancellationToken)
+    {
+        const string sql = """
+            SELECT
+                ShiftDate, ShiftDefId, TeamId, ShiftName, StartTime, EndTime,
+                TargetCount, ActualCount, PeakHourCount, Remark
+            FROM ShiftSummary
+            WHERE EndTime IS NULL
+            ORDER BY ShiftDate, ShiftDefId, TeamId;
+            """;
+
+        await using var conn = _factory.OpenRead();
+        var rows = await conn.QueryAsync<SummaryRow>(new CommandDefinition(sql, cancellationToken: cancellationToken));
         return rows.Select(MapSummary).ToArray();
     }
 

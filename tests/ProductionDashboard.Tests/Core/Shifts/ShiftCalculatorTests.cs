@@ -198,6 +198,22 @@ public sealed class ShiftCalculatorTests
         r.ShiftDate.Should().Be(new DateOnly(2026, 5, 20));
     }
 
+    /// <summary>
+    /// 结束在 00:00 的中班(16:00–24:00)整段都在当天,即使按"结束日"归属也算当天,
+    /// 不能算到第二天。
+    /// </summary>
+    [Theory]
+    [InlineData(ShiftAttributionRule.EndDate)]
+    [InlineData(ShiftAttributionRule.StartDate)]
+    public void Shift_ending_at_midnight_belongs_to_its_start_day(ShiftAttributionRule rule)
+    {
+        var r = ShiftCalculator.Compute(ThreeShifts, new DateTime(2026, 5, 19, 18, 0, 0), rule);
+
+        r!.Definition.Code.Should().Be("Mid");
+        r.ShiftDate.Should().Be(new DateOnly(2026, 5, 19));
+        r.PeriodEnd.Should().Be(new DateTime(2026, 5, 20, 0, 0, 0));
+    }
+
     // ────────────────────────────────────────────────────────────
     //  单班制(只有白天有产量,夜间空档)
     // ────────────────────────────────────────────────────────────

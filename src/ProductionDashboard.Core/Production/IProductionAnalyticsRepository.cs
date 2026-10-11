@@ -40,6 +40,13 @@ public interface IProductionAnalyticsRepository
     Task<IReadOnlyList<int>> GetHourlyCountsForDateAsync(
         DateOnly localDate, CancellationToken cancellationToken);
 
+    /// <summary>
+    /// 统计 [<paramref name="fromUtc"/>, <paramref name="toUtc"/>) 内的产量,按本地小时(0–23)分到 24 个桶。
+    /// 用于一个班次自己的小时产量(跨日的夜班也只统计本班次的时段)。
+    /// </summary>
+    Task<IReadOnlyList<int>> GetHourlyCountsInRangeAsync(
+        DateTime fromUtc, DateTime toUtc, CancellationToken cancellationToken);
+
     /// <summary>取 [fromDate, toDate] 每日 ShiftDate 总产量序列,按日期升序。</summary>
     Task<IReadOnlyList<DailyCount>> GetDailyCountsAsync(
         DateOnly fromDate, DateOnly toDate, CancellationToken cancellationToken);
