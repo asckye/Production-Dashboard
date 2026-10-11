@@ -41,6 +41,7 @@ All notable changes to this project are documented here. The format is based on 
 - 结束在 24:00 的班次(如 16:00–24:00)按"结束日"规则被算到第二天 / A shift ending at 24:00 (such as 16:00–24:00) was attributed to the next day under the end-date rule
 - 大屏每 2 秒的统计查询在 UI 线程上执行,数据量大时界面周期性卡顿;现在在后台线程查询,上一次没完成时跳过本次 / The dashboard's 2-second statistics queries ran on the UI thread, causing periodic stutter with a large database; they now run on a background thread and skip a cycle while the previous one is still running
 - 班组配置页删除班次后列表没有任何变化,保存后才消失;现在立即灰显并锁定编辑,保存前点「取消」可撤销 / Deleting a shift on the configuration page showed no change until saving; it is now greyed out and locked immediately, and Cancel undoes it before saving
+- 新增班次或应用模板后,新班次没有分配班组,这些班次的产量被直接丢弃;删除班次时也不删它的班组分配,「倒班切换」会作用到已删除的班次上。现在每个班次都要选择班组才能保存,分配与班次在同一事务里保存,删除班次时一并删除分配(数据库迁移 v4 清理旧版本留下的残留分配) / New shifts added manually or from a template had no team, so their output was discarded; deleting a shift also left its team assignment behind, and the shift swap then acted on deleted shifts. Every shift now needs a team before saving, assignments are saved in the same transaction as the shifts, and deleting a shift removes its assignment (database migration v4 cleans up leftovers from older versions)
 
 ## [1.1.0] - 2026-10-11
 

@@ -349,6 +349,60 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
     }
 
     /// <summary>
+    /// 保存班次时一并写班组分配:新增班次拿到新 Id 后立即分配;被删除班次的分配一并删除,
+    /// 这样"当前分配"里只剩仍在生效的班次。
+    /// </summary>
+    [Fact]
+    public async Task SaveChanges_assigns_teams_to_new_shifts_and_drops_assignments_of_deleted_ones()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        var teams = new TeamRepository(_factory);
+        var added = new ShiftDefinition(
+            0, "C", "中班", new TimeOnly(16, 0), new TimeOnly(0, 0), true, 800, "#00ff88", 3,
+            today, null, DateTime.UtcNow);
+
+        await _shiftDefs.SaveChangesAsync(
+            new ShiftDefinitionChanges(
+                DeletedIds: [2], Added: [added], Updated: [],
+                TeamByCode: new Dictionary<string, int> { ["C"] = 2 }, ChangedBy: "张班长"),
+            today.AddDays(-1),
+            DateTime.UtcNow,
+            CancellationToken.None);
+
+        var newId = (await _shiftDefs.GetActiveShiftDefinitionsAsync(today, CancellationToken.None)).Single(s => s.Code == "C").Id;
+        var assignments = await teams.GetCurrentAssignmentsAsync(CancellationToken.None);
+        assignments.Select(a => (a.ShiftDefId, a.TeamId)).Should().BeEquivalentTo(
+            [(1, 1), (newId, 2)], "新班次分到 B 班;被删除的夜班(Id=2)不再有分配");
+        assignments.Single(a => a.ShiftDefId == newId).AssignedByOperator.Should().Be("张班长");
+    }
+
+    /// <summary>迁移 v4:清理已删除(最后生效日已过)班次残留的班组分配,仍在生效的班次不受影响。</summary>
+    [Fact]
+    public async Task Migration_v4_removes_assignments_of_deleted_shifts()
+    {
+        await using (var conn = _factory.OpenWrite())
+        {
+            await using var cmd = conn.CreateCommand();
+            cmd.CommandText = "UPDATE ShiftDefinition SET EffectiveTo = '2020-01-01' WHERE Id = 2;";
+            await cmd.ExecuteNonQueryAsync();
+        }
+
+        var v4 = ProductionDashboard.Infrastructure.Persistence.Migrations.MigrationCatalog.All.Single(m => m.Version == 4);
+        await using (var conn = _factory.OpenWrite())
+        {
+            foreach (var sql in v4.Statements)
+            {
+                await using var cmd = conn.CreateCommand();
+                cmd.CommandText = sql;
+                await cmd.ExecuteNonQueryAsync();
+            }
+        }
+
+        (await new TeamRepository(_factory).GetCurrentAssignmentsAsync(CancellationToken.None))
+            .Select(a => a.ShiftDefId).Should().Equal(1);
+    }
+
+    /// <summary>
     /// 已结算的汇总不能被"进行中"的周期刷新覆盖(班次切换瞬间刷新可能晚于结算写入);再次结算仍可更新。
     /// </summary>
     [Fact]
@@ -424,6 +478,7 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         await _shiftDefs.SaveChangesAsync(
             new ShiftDefinitionChanges(DeletedIds: [2], Added: [], Updated: []),
             deletedLastEffectiveDay: today.AddDays(-1),
+            DateTime.UtcNow,
             CancellationToken.None);
 
         (await _shiftDefs.GetActiveShiftDefinitionsAsync(today, CancellationToken.None))
@@ -446,6 +501,7 @@ public sealed class RepositoriesIntegrationTests : IAsyncLifetime
         var save = () => _shiftDefs.SaveChangesAsync(
             new ShiftDefinitionChanges(DeletedIds: [2], Added: [added], Updated: [broken]),
             today.AddDays(-1),
+            DateTime.UtcNow,
             CancellationToken.None);
 
         await save.Should().ThrowAsync<Exception>();

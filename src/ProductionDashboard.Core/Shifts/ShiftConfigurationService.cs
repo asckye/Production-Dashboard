@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Logging;
+using ProductionDashboard.Core.Diagnostics;
 
 namespace ProductionDashboard.Core.Shifts;
 
@@ -9,6 +10,7 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
     private readonly ITeamRepository _teamRepository;
     private readonly IShiftManager _shifts;
     private readonly ITeamAssignmentService _teams;
+    private readonly IAuditLogger _audit;
     private readonly TimeProvider _clock;
     private readonly ILogger<ShiftConfigurationService> _logger;
 
@@ -18,6 +20,7 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
         ITeamRepository teamRepository,
         IShiftManager shifts,
         ITeamAssignmentService teams,
+        IAuditLogger audit,
         TimeProvider clock,
         ILogger<ShiftConfigurationService> logger)
     {
@@ -25,6 +28,7 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
         _teamRepository = teamRepository;
         _shifts = shifts;
         _teams = teams;
+        _audit = audit;
         _clock = clock;
         _logger = logger;
     }
@@ -39,7 +43,8 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
         var today = DateOnly.FromDateTime(_clock.GetLocalNow().DateTime);
         var deletedLastEffectiveDay = today.AddDays(-1);
 
-        await _shiftRepository.SaveChangesAsync(changes, deletedLastEffectiveDay, cancellationToken).ConfigureAwait(false);
+        await _shiftRepository.SaveChangesAsync(
+            changes, deletedLastEffectiveDay, _clock.GetUtcNow().UtcDateTime, cancellationToken).ConfigureAwait(false);
 
         foreach (var id in changes.DeletedIds)
         {
@@ -56,7 +61,24 @@ public sealed class ShiftConfigurationService : IShiftConfigurationService
                 definition.Code, definition.Name, definition.StartTime, definition.EndTime, definition.TargetCount);
         }
 
+        var teamByCode = changes.TeamByCode ?? new Dictionary<string, int>();
+        foreach (var (code, teamId) in teamByCode)
+        {
+            _logger.LogInformation("班次班组分配 · {Code} → 班组 Id={TeamId}", code, teamId);
+        }
+
         await _shifts.RefreshAsync(cancellationToken).ConfigureAwait(false);
+        await _teams.RefreshAsync(cancellationToken).ConfigureAwait(false);
+
+        if (changes.DeletedIds.Count > 0 || changes.Added.Count > 0 || changes.Updated.Count > 0 || teamByCode.Count > 0)
+        {
+            var detail =
+                $"shifts: deleted=[{string.Join(",", changes.DeletedIds)}] "
+                + $"added=[{string.Join(",", changes.Added.Select(d => d.Code))}] "
+                + $"updated=[{string.Join(",", changes.Updated.Select(d => d.Code))}] "
+                + $"teams=[{string.Join(",", teamByCode.Select(kv => $"{kv.Key}→{kv.Value}"))}]";
+            await _audit.WriteAsync("ShiftConfig", detail, changes.ChangedBy, cancellationToken).ConfigureAwait(false);
+        }
     }
 
     /// <inheritdoc/>

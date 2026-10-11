@@ -1,5 +1,6 @@
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
+using ProductionDashboard.Core.Diagnostics;
 using ProductionDashboard.Core.Shifts;
 
 namespace ProductionDashboard.Tests.Core.Shifts;
@@ -11,9 +12,10 @@ public class ShiftConfigurationServiceTests
     private readonly RecordingTeamRepository _teamRepo = new();
     private readonly CountingShiftManager _shifts = new();
     private readonly CountingTeamAssignment _teams = new();
+    private readonly RecordingAudit _audit = new();
 
     private ShiftConfigurationService CreateService() => new(
-        _shiftRepo, _teamRepo, _shifts, _teams,
+        _shiftRepo, _teamRepo, _shifts, _teams, _audit,
         new FixedClock(new DateTimeOffset(2026, 10, 11, 1, 30, 0, TimeSpan.Zero)), // 本地 (UTC+8) 2026-10-11 09:30
         NullLogger<ShiftConfigurationService>.Instance);
 
@@ -26,6 +28,21 @@ public class ShiftConfigurationServiceTests
 
         _shiftRepo.Saved.Should().ContainSingle().Which.Should().Be(changes);
         _shifts.RefreshCount.Should().Be(1, "保存后运行中的 ShiftManager 必须重新加载班次");
+        _teams.RefreshCount.Should().Be(1, "班次的班组分配可能变了,班组分配也要重新加载");
+    }
+
+    [Fact]
+    public async Task Saving_shift_changes_writes_an_audit_record_with_team_assignments()
+    {
+        await CreateService().SaveShiftDefinitionsAsync(
+            new ShiftDefinitionChanges(
+                DeletedIds: [1], Added: [Shift(0, "C")], Updated: [],
+                TeamByCode: new Dictionary<string, int> { ["C"] = 2 }, ChangedBy: "张班长"),
+            CancellationToken.None);
+
+        _audit.Entries.Should().ContainSingle()
+            .Which.Should().Match<(string Category, string Detail, string? User)>(e =>
+                e.Category == "ShiftConfig" && e.Detail.Contains("C→2") && e.User == "张班长");
     }
 
     [Fact]
@@ -71,7 +88,8 @@ public class ShiftConfigurationServiceTests
         public DateOnly? DeletedLastEffectiveDay { get; private set; }
 
         public Task SaveChangesAsync(
-            ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken)
+            ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, DateTime nowUtc,
+            CancellationToken cancellationToken)
         {
             Saved.Add(changes);
             DeletedLastEffectiveDay = deletedLastEffectiveDay;
@@ -86,6 +104,17 @@ public class ShiftConfigurationServiceTests
 
         public Task<ShiftDefinition?> GetShiftDefinitionAsync(int id, CancellationToken cancellationToken) =>
             throw new NotSupportedException();
+    }
+
+    private sealed class RecordingAudit : IAuditLogger
+    {
+        public List<(string Category, string Detail, string? User)> Entries { get; } = [];
+
+        public Task WriteAsync(string category, string detail, string? user = null, CancellationToken cancellationToken = default)
+        {
+            Entries.Add((category, detail, user));
+            return Task.CompletedTask;
+        }
     }
 
     private sealed class RecordingTeamRepository : ITeamRepository

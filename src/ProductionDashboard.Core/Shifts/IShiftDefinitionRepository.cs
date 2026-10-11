@@ -21,13 +21,16 @@ public interface IShiftDefinitionRepository
         ShiftDefinition definition, CancellationToken cancellationToken);
 
     /// <summary>
-    /// 在<b>同一个事务</b>里保存一次配置修改:软删除、新增、修改(按 Id,Code 不变以免破坏外键关联)。
+    /// 在<b>同一个事务</b>里保存一次配置修改:软删除、新增、修改(按 Id,Code 不变以免破坏外键关联),
+    /// 以及班次的班组分配(<see cref="ShiftDefinitionChanges.TeamByCode"/>)。
     /// 任何一步失败都整体回滚,不会留下"保存了一半"的状态,重试也不会重复新增。
     /// <para>
     /// 软删除不删行,只把 EffectiveTo 设为 <paramref name="deletedLastEffectiveDay"/>(最后生效的一天),
-    /// 历史 ShiftSummary / ProductionEvent 的外键仍然有效。
+    /// 历史 ShiftSummary / ProductionEvent 的外键仍然有效;被删班次的班组分配一并删除,
+    /// 这样"当前分配"里只有仍在生效的班次(倒班对调只作用于它们)。
     /// </para>
     /// </summary>
     Task SaveChangesAsync(
-        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken);
+        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, DateTime nowUtc,
+        CancellationToken cancellationToken);
 }

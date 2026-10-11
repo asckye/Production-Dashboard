@@ -181,5 +181,18 @@ public static class MigrationCatalog
             {
                 MinuteAggregateSql.RebuildAll,
             }),
+
+        new(
+            Version: 4,
+            Description: "清理已删除班次残留的班组分配(旧版删除班次时不删分配,倒班对调会作用到已删除的班次上)",
+            Statements: new[]
+            {
+                """
+                DELETE FROM ShiftSlotAssignment
+                WHERE ShiftDefId IN (
+                    SELECT Id FROM ShiftDefinition
+                    WHERE EffectiveTo IS NOT NULL AND EffectiveTo < date('now', 'localtime'));
+                """,
+            }),
     };
 }

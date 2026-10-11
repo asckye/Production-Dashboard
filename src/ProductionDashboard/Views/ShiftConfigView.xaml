@@ -273,6 +273,7 @@
                                                     <ColumnDefinition Width="14" />
                                                     <ColumnDefinition Width="180" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                     <ColumnDefinition Width="120" />
                                                     <ColumnDefinition Width="140" />
                                                     <ColumnDefinition Width="50" />
@@ -351,7 +352,18 @@
                                                     </StackPanel>
                                                 </StackPanel>
 
-                                                <StackPanel Grid.Column="3" VerticalAlignment="Center">
+                                                <!-- 班组:没有班组的班次产量无法记录,保存前必须选择 -->
+                                                <StackPanel Grid.Column="3" VerticalAlignment="Center" Margin="0,0,24,0">
+                                                    <TextBlock Style="{StaticResource Text.Caption}" Text="班组" />
+                                                    <ListBox Style="{StaticResource Style.ChoicePills}"
+                                                             Margin="0,4,0,0"
+                                                             ItemsSource="{Binding DataContext.Definitions.TeamOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                             DisplayMemberPath="Name"
+                                                             SelectedValuePath="Id"
+                                                             SelectedValue="{Binding TeamId}" />
+                                                </StackPanel>
+
+                                                <StackPanel Grid.Column="4" VerticalAlignment="Center">
                                                     <TextBlock Style="{StaticResource Text.Caption}" Text="时长" />
                                                     <TextBlock Text="{Binding DurationLabel}"
                                                                FontSize="{StaticResource FontSize.BodyLg}"
@@ -360,7 +372,7 @@
                                                                Margin="0,4,0,0" />
                                                 </StackPanel>
 
-                                                <StackPanel Grid.Column="4" VerticalAlignment="Center">
+                                                <StackPanel Grid.Column="5" VerticalAlignment="Center">
                                                     <TextBlock Style="{StaticResource Text.Caption}" Text="目标产量 (件)" />
                                                     <TextBox Text="{Binding TargetCount, UpdateSourceTrigger=PropertyChanged}"
                                                              Width="100" Padding="8,6"
@@ -374,7 +386,7 @@
                                                              Margin="0,4,0,0" />
                                                 </StackPanel>
 
-                                                <Button Grid.Column="5"
+                                                <Button Grid.Column="6"
                                                         Width="36" Height="36"
                                                         VerticalAlignment="Center"
                                                         HorizontalAlignment="Right"

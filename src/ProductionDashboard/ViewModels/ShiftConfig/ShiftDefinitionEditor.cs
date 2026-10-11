@@ -16,6 +16,7 @@ namespace ProductionDashboard.ViewModels.ShiftConfig;
 ///   <item>24h 时间轴片段构造(<see cref="TimelineSegments"/>)</item>
 ///   <item>覆盖检测(<see cref="CoverageHint"/> / <see cref="IsCoverageValid"/>)</item>
 ///   <item>快速模板应用(单班/两班/三班/四班)</item>
+///   <item>每个班次的班组分配(没有班组的班次产量无法记录,保存前必须选择)</item>
 ///   <item>NOW 红线 + 时间标签的 1 秒刷新</item>
 /// </list>
 /// </summary>
@@ -23,6 +24,7 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
 {
     private readonly IShiftConfigurationService _configuration;
     private readonly IShiftManager _shifts;
+    private readonly ITeamAssignmentService _teamAssign;
     private readonly IToastService _toast;
     private readonly IAuthService _auth;
     private readonly TimeProvider _clock;
@@ -32,6 +34,7 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     public ShiftDefinitionEditor(
         IShiftConfigurationService configuration,
         IShiftManager shifts,
+        ITeamAssignmentService teamAssign,
         IToastService toast,
         IAuthService auth,
         TimeProvider clock,
@@ -39,6 +42,7 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     {
         _configuration = configuration;
         _shifts = shifts;
+        _teamAssign = teamAssign;
         _toast = toast;
         _auth = auth;
         _clock = clock;
@@ -68,6 +72,9 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
 
     /// <summary>24 小时时间轴片段集合,UI 直接渲染(LeftPercent + WidthPercent 定位)。</summary>
     public ObservableCollection<TimelineSegment> TimelineSegments { get; }
+
+    /// <summary>可选的班组(当前启用的班组,按显示顺序),每个班次行用它选择班组。</summary>
+    [ObservableProperty] public partial IReadOnlyList<Team> TeamOptions { get; set; } = Array.Empty<Team>();
 
     /// <summary>「单班 / 两班倒 / 三班倒 / 四班三运转」内置模板,一键应用替换当前班次集。</summary>
     public IReadOnlyList<ShiftTemplate> Templates { get; }
@@ -116,9 +123,10 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     {
         foreach (var e in Editables) e.PropertyChanged -= OnEditablePropertyChanged;
         Editables.Clear();
+        TeamOptions = _teamAssign.Teams;
         foreach (var def in _shifts.Definitions.OrderBy(s => s.DisplayOrder))
         {
-            var editable = EditableShift.From(def);
+            var editable = EditableShift.From(def, _teamAssign.GetTeamForSlot(def.Id)?.Id);
             editable.PropertyChanged += OnEditablePropertyChanged;
             Editables.Add(editable);
         }
@@ -173,6 +181,7 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
             EffectiveFrom = DateOnly.FromDateTime(LocalNow),
             EffectiveTo = null,
             CreatedAt = _clock.GetUtcNow().UtcDateTime,
+            TeamId = DefaultTeamFor(Editables.Count(e => !e.IsDeleted)),
             IsDirty = true,
             IsNew = true,
         };
@@ -207,6 +216,13 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     {
         if (template is null) return;
 
+        // 新班次按顺序沿用原来各班次的班组(第 1 个沿用原第 1 个的,依此类推),多出来的轮流分配
+        var previousTeams = Editables
+            .Where(e => !e.IsDeleted)
+            .OrderBy(e => e.DisplayOrder)
+            .Select(e => e.TeamId)
+            .ToList();
+
         var toRemove = Editables.Where(e => e.IsNew).ToList();
         foreach (var es in toRemove)
         {
@@ -221,8 +237,10 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
 
         var today = DateOnly.FromDateTime(LocalNow);
         var displayOrder = Editables.Count + 1;
+        var position = 0;
         foreach (var ts in template.Shifts)
         {
+            var inherited = position < previousTeams.Count ? previousTeams[position] : null;
             var es = new EditableShift
             {
                 Id = 0,
@@ -236,11 +254,13 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
                 EffectiveFrom = today,
                 EffectiveTo = null,
                 CreatedAt = _clock.GetUtcNow().UtcDateTime,
+                TeamId = inherited ?? DefaultTeamFor(position),
                 IsDirty = true,
                 IsNew = true,
             };
             es.PropertyChanged += OnEditablePropertyChanged;
             Editables.Add(es);
+            position++;
         }
 
         _toast.Show($"已应用模板「{template.Name}」,点击「保存并应用」生效", ToastSeverity.Info);
@@ -248,6 +268,10 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
         RebuildTimeline();
         DirtyStateChanged?.Invoke();
     }
+
+    /// <summary>新班次的默认班组:按班次位置在启用的班组里轮流取。没有班组时为 null。</summary>
+    private int? DefaultTeamFor(int position) =>
+        TeamOptions.Count == 0 ? null : TeamOptions[position % TeamOptions.Count].Id;
 
     private static IReadOnlyList<ShiftTemplate> BuildBuiltInTemplates() => new[]
     {
@@ -425,6 +449,11 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
                 _toast.ShowWarning($"班次 [{es.Code}] 名称不能为空");
                 return false;
             }
+            if (es.TeamId is null)
+            {
+                _toast.ShowWarning($"班次 [{es.Code}] 还没有选择班组,没有班组的班次产量无法记录");
+                return false;
+            }
         }
 
         if (AnalyzeCoverage(live)?.FirstOverlap is { } overlap)
@@ -446,10 +475,15 @@ public sealed partial class ShiftDefinitionEditor : ObservableObject
     {
         if (!Validate()) return false;
 
+        var live = Editables.Where(e => !e.IsDeleted).ToList();
         var changes = new ShiftDefinitionChanges(
             DeletedIds: Editables.Where(e => e.IsDeleted && e.Id > 0).Select(e => e.Id).ToList(),
-            Added: Editables.Where(e => !e.IsDeleted && e.IsDirty && e.IsNew).Select(ToDefinition).ToList(),
-            Updated: Editables.Where(e => !e.IsDeleted && e.IsDirty && !e.IsNew).Select(ToDefinition).ToList());
+            Added: live.Where(e => e.IsDirty && e.IsNew).Select(ToDefinition).ToList(),
+            Updated: live.Where(e => e.IsDirty && !e.IsNew).Select(ToDefinition).ToList(),
+            TeamByCode: live
+                .Where(e => e.TeamId is not null && (e.IsNew || e.TeamId != e.OriginalTeamId))
+                .ToDictionary(e => e.Code, e => e.TeamId!.Value),
+            ChangedBy: _auth.CurrentOperator);
 
         await _configuration.SaveShiftDefinitionsAsync(changes, cancellationToken).ConfigureAwait(false);
         return true;
@@ -541,6 +575,12 @@ public sealed partial class EditableShift : ObservableObject
     /// <summary>本班次的目标产量(件)。Save 时落到 ShiftDefinition.TargetCount。</summary>
     [ObservableProperty] public partial int TargetCount { get; set; }
 
+    /// <summary>该班次分配的班组 Id(null = 未分配)。界面上用班组按钮选择。</summary>
+    [ObservableProperty] public partial int? TeamId { get; set; }
+
+    /// <summary>加载时的班组 Id,保存时据此判断班组是否改过。</summary>
+    public int? OriginalTeamId { get; init; }
+
     /// <summary>是否有未保存改动。任一可观察字段变化时由外层置 true。</summary>
     [ObservableProperty] public partial bool IsDirty { get; set; }
 
@@ -567,9 +607,11 @@ public sealed partial class EditableShift : ObservableObject
         }
     }
 
-    /// <summary>从持久化的 <see cref="ShiftDefinition"/> 构造 Editable 包装(IsNew / IsDirty / IsDeleted 默认 false)。</summary>
-    public static EditableShift From(ShiftDefinition def) => new()
+    /// <summary>从持久化的 <see cref="ShiftDefinition"/> 和它当前的班组构造 Editable 包装(IsNew / IsDirty / IsDeleted 默认 false)。</summary>
+    public static EditableShift From(ShiftDefinition def, int? teamId = null) => new()
     {
+        TeamId = teamId,
+        OriginalTeamId = teamId,
         Id = def.Id,
         Code = def.Code,
         Name = def.Name,

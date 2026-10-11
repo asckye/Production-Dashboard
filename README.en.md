@@ -201,7 +201,9 @@ At year rollover, data is archived to `Data/Archives/{year}.xlsx`, a full databa
 
 ## Shift and team configuration
 
-Start the UI → click **⚙ 班组配置** (Team & Shift Settings) in the top bar → edit names / start and end times / target output / team name and team leader → click **保存并应用** (Save & Apply).
+Start the UI → click **⚙ 班组配置** (Team & Shift Settings) in the top bar → edit names / start and end times / target output / which team works the shift / team name and team leader → click **保存并应用** (Save & Apply).
+
+Every shift must have a team (output of a shift without a team cannot be recorded). New shifts get a default team by rotation, and applying a template keeps the original shifts' teams in order; you can change any of them before saving.
 
 Any shift pattern is supported, for example:
 
@@ -224,7 +226,7 @@ Any shift pattern is supported, for example:
 dotnet test
 ```
 
-All **276 tests pass**. Main coverage:
+All **279 tests pass**. Main coverage:
 
 | Module | Coverage |
 |---|---|

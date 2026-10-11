@@ -45,4 +45,65 @@
         <Setter Property="FontWeight" Value="Bold" />
     </Style>
 
+    <!--
+        选项胶囊:一行可点选的小按钮(例如为班次选择班组),选中项高亮为品牌色。
+        用 ListBox 实现单选,绑定 SelectedValue 即可;去掉自带的滚动区(选项很少,而且会吞掉外层列表的鼠标滚轮)。
+    -->
+    <Style x:Key="Style.ChoicePills" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="SelectionMode" Value="Single" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBox">
+                    <ItemsPresenter />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <StackPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+        <Setter Property="ItemContainerStyle">
+            <Setter.Value>
+                <Style TargetType="ListBoxItem">
+                    <Setter Property="Cursor" Value="Hand" />
+                    <Setter Property="Margin" Value="0,0,6,0" />
+                    <Setter Property="Foreground" Value="{DynamicResource Brush.Text1}" />
+                    <Setter Property="FontSize" Value="{StaticResource FontSize.Body}" />
+                    <Setter Property="Template">
+                        <Setter.Value>
+                            <ControlTemplate TargetType="ListBoxItem">
+                                <Border
+                                    x:Name="Pill"
+                                    Padding="12,6"
+                                    Background="{DynamicResource Brush.Bg3}"
+                                    BorderBrush="{DynamicResource Brush.Line}"
+                                    BorderThickness="1"
+                                    CornerRadius="{StaticResource Radius.Sm}">
+                                    <ContentPresenter VerticalAlignment="Center" />
+                                </Border>
+                                <ControlTemplate.Triggers>
+                                    <Trigger Property="IsMouseOver" Value="True">
+                                        <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource Brush.Brand}" />
+                                    </Trigger>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter TargetName="Pill" Property="Background" Value="{DynamicResource Brush.Brand}" />
+                                        <Setter TargetName="Pill" Property="BorderBrush" Value="{DynamicResource Brush.Brand}" />
+                                        <Setter Property="Foreground" Value="#FF001824" />
+                                        <Setter Property="FontWeight" Value="Bold" />
+                                    </Trigger>
+                                </ControlTemplate.Triggers>
+                            </ControlTemplate>
+                        </Setter.Value>
+                    </Setter>
+                </Style>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
 </ResourceDictionary>

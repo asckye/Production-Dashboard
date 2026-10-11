@@ -82,6 +82,16 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
 
     private const string SoftDeleteSql = """
         UPDATE ShiftDefinition SET EffectiveTo = @effectiveTo WHERE Id = @id;
+        DELETE FROM ShiftSlotAssignment WHERE ShiftDefId = @id;
+        """;
+
+    private const string AssignSql = """
+        INSERT INTO ShiftSlotAssignment (ShiftDefId, TeamId, AssignedAt, AssignedByOperator)
+        VALUES (@ShiftDefId, @TeamId, @AssignedAt, @AssignedByOperator)
+        ON CONFLICT(ShiftDefId) DO UPDATE SET
+            TeamId             = excluded.TeamId,
+            AssignedAt         = excluded.AssignedAt,
+            AssignedByOperator = excluded.AssignedByOperator;
         """;
 
     /// <inheritdoc/>
@@ -98,9 +108,13 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
 
     /// <inheritdoc/>
     public async Task SaveChangesAsync(
-        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, CancellationToken cancellationToken)
+        ShiftDefinitionChanges changes, DateOnly deletedLastEffectiveDay, DateTime nowUtc,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(changes);
+
+        // 班次代号 → 保存后的 Id(新增班次的 Id 插入后才知道),用于写班组分配
+        var idByCode = new Dictionary<string, int>(StringComparer.Ordinal);
 
         await using var conn = _factory.OpenWrite();
         await using var tx = (Microsoft.Data.Sqlite.SqliteTransaction)
@@ -118,8 +132,9 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
 
             foreach (var definition in changes.Added)
             {
-                await conn.ExecuteAsync(new CommandDefinition(
+                var newId = await conn.ExecuteScalarAsync<long>(new CommandDefinition(
                     InsertSql, ToInsertParameters(definition), transaction: tx, cancellationToken: cancellationToken));
+                idByCode[definition.Code] = (int)newId;
             }
 
             foreach (var definition in changes.Updated)
@@ -136,6 +151,26 @@ public sealed class ShiftDefinitionRepository : IShiftDefinitionRepository
                         definition.TargetCount,
                         definition.ColorHex,
                         definition.DisplayOrder,
+                    },
+                    transaction: tx,
+                    cancellationToken: cancellationToken));
+                idByCode[definition.Code] = definition.Id;
+            }
+
+            foreach (var (code, teamId) in changes.TeamByCode ?? new Dictionary<string, int>())
+            {
+                if (!idByCode.TryGetValue(code, out var shiftDefId))
+                {
+                    throw new InvalidOperationException($"班组分配引用的班次 [{code}] 不在本次保存的新增或修改列表里");
+                }
+                await conn.ExecuteAsync(new CommandDefinition(
+                    AssignSql,
+                    new
+                    {
+                        ShiftDefId = shiftDefId,
+                        TeamId = teamId,
+                        AssignedAt = nowUtc.ToString("O"),
+                        AssignedByOperator = changes.ChangedBy,
                     },
                     transaction: tx,
                     cancellationToken: cancellationToken));

@@ -41,7 +41,7 @@ public sealed partial class ShiftConfigViewModel : ObservableObject
         _clock = clock;
         _dispatcher = Application.Current.Dispatcher;
 
-        Definitions = new ShiftDefinitionEditor(configuration, shifts, toast, auth, clock, _dispatcher);
+        Definitions = new ShiftDefinitionEditor(configuration, shifts, teamAssign, toast, auth, clock, _dispatcher);
         Teams = new TeamManagementEditor(configuration, teamAssign, toast, auth);
 
         Definitions.DirtyStateChanged += RecalcHasUnsavedChanges;
