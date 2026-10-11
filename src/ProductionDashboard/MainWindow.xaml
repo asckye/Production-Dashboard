@@ -5,6 +5,7 @@
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         xmlns:vm="clr-namespace:ProductionDashboard.ViewModels"
         xmlns:views="clr-namespace:ProductionDashboard.Views"
+        xmlns:controls="clr-namespace:ProductionDashboard.Controls"
         mc:Ignorable="d"
         d:DataContext="{d:DesignInstance Type=vm:MainViewModel, IsDesignTimeCreatable=False}"
         Title="生产看板"
@@ -16,236 +17,242 @@
         TextOptions.TextRenderingMode="ClearType"
         UseLayoutRounding="True"
         SnapsToDevicePixels="True">
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="80" />
-            <RowDefinition Height="*" />
-            <RowDefinition Height="Auto" />
-        </Grid.RowDefinitions>
+    <!--
+        整个界面按 1920×1080 设计,由 DesignScaleDecorator 按窗口大小等比缩放:
+        小窗口 / 低分辨率不会被截断,2K / 4K 屏也不会显得字小、留大片空白。
+    -->
+    <controls:DesignScaleDecorator>
+        <Grid Margin="16">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="80" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
 
-        <!-- ═══ 顶栏:Logo / 工厂名 / 班次徽章 / PLC 状态 / 操作按钮 / 时钟 ═══ -->
-        <Border Grid.Row="0" Style="{StaticResource Style.TopBar}">
-            <Grid>
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Brush.Text0}">
-                        <Run Text="PRO" />
-                        <Run Text="DASH" Foreground="{DynamicResource Brush.Brand}" />
-                    </TextBlock>
-                    <Border Width="2" Margin="20,10" Background="{DynamicResource Brush.Line}" />
-                    <TextBlock Text="{Binding FactoryName}"
-                               FontSize="{StaticResource FontSize.BodyLg}"
-                               Foreground="{DynamicResource Brush.Text1}"
-                               VerticalAlignment="Center" />
-                </StackPanel>
+            <!-- ═══ 顶栏:Logo / 工厂名 / 班次徽章 / PLC 状态 / 操作按钮 / 时钟 ═══ -->
+            <Border Grid.Row="0" Style="{StaticResource Style.TopBar}">
+                <Grid>
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock FontSize="26" FontWeight="Bold" Foreground="{DynamicResource Brush.Text0}">
+                            <Run Text="PRO" />
+                            <Run Text="DASH" Foreground="{DynamicResource Brush.Brand}" />
+                        </TextBlock>
+                        <Border Width="2" Margin="20,10" Background="{DynamicResource Brush.Line}" />
+                        <TextBlock Text="{Binding FactoryName}"
+                                   FontSize="{StaticResource FontSize.BodyLg}"
+                                   Foreground="{DynamicResource Brush.Text1}"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
 
-                    <!-- ━━━━━━ ① 槽位信息(白班 / 夜班 当前班组,跟人走) ━━━━━━ -->
-                    <Border Background="{DynamicResource Brush.Bg2}" CornerRadius="6"
-                            Padding="12,5" Margin="0,0,16,0">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="{Binding DaySlotTeamText}"
-                                       FontSize="{StaticResource FontSize.Body}"
-                                       Foreground="{DynamicResource Brush.ShiftA}"
-                                       VerticalAlignment="Center"
-                                       Margin="0,0,12,0" />
-                            <Border Width="1" Background="{DynamicResource Brush.Line}" Margin="0,2" />
-                            <TextBlock Text="{Binding NightSlotTeamText}"
-                                       FontSize="{StaticResource FontSize.Body}"
-                                       Foreground="{DynamicResource Brush.ShiftB}"
-                                       VerticalAlignment="Center"
-                                       Margin="12,0,0,0" />
-                        </StackPanel>
-                    </Border>
+                        <!-- ━━━━━━ ① 槽位信息(白班 / 夜班 当前班组,跟人走) ━━━━━━ -->
+                        <Border Background="{DynamicResource Brush.Bg2}" CornerRadius="6"
+                                Padding="12,5" Margin="0,0,16,0">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="{Binding DaySlotTeamText}"
+                                           FontSize="{StaticResource FontSize.Body}"
+                                           Foreground="{DynamicResource Brush.ShiftA}"
+                                           VerticalAlignment="Center"
+                                           Margin="0,0,12,0" />
+                                <Border Width="1" Background="{DynamicResource Brush.Line}" Margin="0,2" />
+                                <TextBlock Text="{Binding NightSlotTeamText}"
+                                           FontSize="{StaticResource FontSize.Body}"
+                                           Foreground="{DynamicResource Brush.ShiftB}"
+                                           VerticalAlignment="Center"
+                                           Margin="12,0,0,0" />
+                            </StackPanel>
+                        </Border>
 
-                    <!-- ━━━━━━ ② 状态徽章组(当前班次 + PLC) ━━━━━━ -->
-                    <Border Style="{StaticResource Style.Badge.Shift}" Margin="0,0,8,0">
-                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                            <Ellipse Width="8" Height="8"
-                                     VerticalAlignment="Center" Margin="0,0,8,0">
-                                <Ellipse.Style>
-                                    <Style TargetType="Ellipse">
-                                        <Setter Property="Fill" Value="{DynamicResource Brush.ShiftA}" />
-                                        <Setter Property="Effect">
-                                            <Setter.Value>
-                                                <DropShadowEffect Color="{DynamicResource Color.ShiftA}"
-                                                                  BlurRadius="10" ShadowDepth="0" />
-                                            </Setter.Value>
-                                        </Setter>
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding Dashboard.BIsActive}" Value="True">
-                                                <Setter Property="Fill" Value="{DynamicResource Brush.ShiftB}" />
-                                                <Setter Property="Effect">
-                                                    <Setter.Value>
-                                                        <DropShadowEffect Color="{DynamicResource Color.ShiftB}"
-                                                                          BlurRadius="10" ShadowDepth="0" />
-                                                    </Setter.Value>
-                                                </Setter>
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Ellipse.Style>
-                            </Ellipse>
-                            <TextBlock VerticalAlignment="Center"
-                                       FontSize="{StaticResource FontSize.Body}">
-                                <Run Text="{Binding CurrentShiftText, Mode=OneWay}"
-                                     FontWeight="Bold">
-                                    <Run.Style>
-                                        <Style TargetType="Run">
-                                            <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftA}" />
+                        <!-- ━━━━━━ ② 状态徽章组(当前班次 + PLC) ━━━━━━ -->
+                        <Border Style="{StaticResource Style.Badge.Shift}" Margin="0,0,8,0">
+                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                <Ellipse Width="8" Height="8"
+                                         VerticalAlignment="Center" Margin="0,0,8,0">
+                                    <Ellipse.Style>
+                                        <Style TargetType="Ellipse">
+                                            <Setter Property="Fill" Value="{DynamicResource Brush.ShiftA}" />
+                                            <Setter Property="Effect">
+                                                <Setter.Value>
+                                                    <DropShadowEffect Color="{DynamicResource Color.ShiftA}"
+                                                                      BlurRadius="10" ShadowDepth="0" />
+                                                </Setter.Value>
+                                            </Setter>
                                             <Style.Triggers>
-                                                <DataTrigger Binding="{Binding Dashboard.BIsActive}" Value="True">
-                                                    <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftB}" />
+                                                <DataTrigger Binding="{Binding Dashboard.Hero.BIsActive}" Value="True">
+                                                    <Setter Property="Fill" Value="{DynamicResource Brush.ShiftB}" />
+                                                    <Setter Property="Effect">
+                                                        <Setter.Value>
+                                                            <DropShadowEffect Color="{DynamicResource Color.ShiftB}"
+                                                                              BlurRadius="10" ShadowDepth="0" />
+                                                        </Setter.Value>
+                                                    </Setter>
                                                 </DataTrigger>
                                             </Style.Triggers>
                                         </Style>
-                                    </Run.Style>
-                                </Run>
-                            </TextBlock>
-                        </StackPanel>
-                    </Border>
-                    <Grid Margin="0,0,16,0">
-                        <Border Style="{StaticResource Style.Badge.Plc}"
-                                Visibility="{Binding Dashboard.PlcConnected, Converter={StaticResource BoolToVisibilityConverter}}">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Ellipse Width="8" Height="8" Fill="{DynamicResource Brush.Success}"
-                                         VerticalAlignment="Center" Margin="0,0,8,0">
-                                    <Ellipse.Effect>
-                                        <DropShadowEffect Color="{DynamicResource Color.Success}"
-                                                          BlurRadius="10" ShadowDepth="0" />
-                                    </Ellipse.Effect>
+                                    </Ellipse.Style>
                                 </Ellipse>
-                                <TextBlock Text="PLC 在线"
-                                           Foreground="{DynamicResource Brush.Success}"
-                                           FontSize="{StaticResource FontSize.Body}"
-                                           VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center"
+                                           FontSize="{StaticResource FontSize.Body}">
+                                    <Run Text="{Binding CurrentShiftText, Mode=OneWay}"
+                                         FontWeight="Bold">
+                                        <Run.Style>
+                                            <Style TargetType="Run">
+                                                <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftA}" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding Dashboard.Hero.BIsActive}" Value="True">
+                                                        <Setter Property="Foreground" Value="{DynamicResource Brush.ShiftB}" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Run.Style>
+                                    </Run>
+                                </TextBlock>
                             </StackPanel>
                         </Border>
-                        <Border Style="{StaticResource Style.Badge.PlcOffline}"
-                                Visibility="{Binding Dashboard.PlcConnected, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <Ellipse Width="8" Height="8" Fill="{DynamicResource Brush.Danger}"
-                                         VerticalAlignment="Center" Margin="0,0,8,0">
-                                    <Ellipse.Effect>
-                                        <DropShadowEffect Color="{DynamicResource Color.Danger}"
-                                                          BlurRadius="10" ShadowDepth="0" />
-                                    </Ellipse.Effect>
-                                </Ellipse>
-                                <TextBlock Text="PLC 离线"
-                                           Foreground="{DynamicResource Brush.Danger}"
-                                           FontSize="{StaticResource FontSize.Body}"
-                                           VerticalAlignment="Center" />
-                            </StackPanel>
-                        </Border>
-                    </Grid>
+                        <Grid Margin="0,0,16,0">
+                            <Border Style="{StaticResource Style.Badge.Plc}"
+                                    Visibility="{Binding Dashboard.PlcConnected, Converter={StaticResource BoolToVisibilityConverter}}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="8" Height="8" Fill="{DynamicResource Brush.Success}"
+                                             VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <Ellipse.Effect>
+                                            <DropShadowEffect Color="{DynamicResource Color.Success}"
+                                                              BlurRadius="10" ShadowDepth="0" />
+                                        </Ellipse.Effect>
+                                    </Ellipse>
+                                    <TextBlock Text="PLC 在线"
+                                               Foreground="{DynamicResource Brush.Success}"
+                                               FontSize="{StaticResource FontSize.Body}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                            <Border Style="{StaticResource Style.Badge.PlcOffline}"
+                                    Visibility="{Binding Dashboard.PlcConnected, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="8" Height="8" Fill="{DynamicResource Brush.Danger}"
+                                             VerticalAlignment="Center" Margin="0,0,8,0">
+                                        <Ellipse.Effect>
+                                            <DropShadowEffect Color="{DynamicResource Color.Danger}"
+                                                              BlurRadius="10" ShadowDepth="0" />
+                                        </Ellipse.Effect>
+                                    </Ellipse>
+                                    <TextBlock Text="PLC 离线"
+                                               Foreground="{DynamicResource Brush.Danger}"
+                                               FontSize="{StaticResource FontSize.Body}"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+                        </Grid>
 
-                    <!-- ━━━━━━ ③ 操作按钮组 ━━━━━━ -->
-                    <!-- 登录态:班长身份 + 登出 -->
-                    <Border CornerRadius="6" Padding="10,4" Margin="0,0,8,0"
-                            Background="{DynamicResource Brush.Bg2}"
-                            Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock VerticalAlignment="Center" FontSize="{StaticResource FontSize.Body}"
-                                       Foreground="{DynamicResource Brush.Text1}">
-                                <Run Text="班长:" />
-                                <Run Text="{Binding OperatorName, Mode=OneWay}"
-                                     FontWeight="Bold"
-                                     Foreground="{DynamicResource Brush.Brand}" />
-                            </TextBlock>
-                            <Button Command="{Binding LogoutCommand}"
-                                    Style="{StaticResource Style.Button.Secondary}"
-                                    Margin="10,0,0,0" Padding="8,4"
-                                    Content="登出"
-                                    ToolTip="结束当前班长会话" />
-                        </StackPanel>
-                    </Border>
-
-                    <!-- 未登录态:登录按钮 -->
-                    <Button Command="{Binding LoginCommand}"
-                            Style="{StaticResource Style.Button.Secondary}"
-                            Margin="0,0,8,0" Padding="12,7"
-                            Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="🔑" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock Text="班长登录" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-
-                    <!-- 倒班切换:登录态可见 -->
-                    <Button Command="{Binding SwapShiftsCommand}"
-                            Style="{StaticResource Style.Button.Primary}"
-                            Margin="0,0,8,0" Padding="14,7"
-                            ToolTip="把白班 / 夜班两个槽位的班组归属对调"
-                            Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="⇄" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center" />
-                            <TextBlock Text="倒班切换" VerticalAlignment="Center" />
-                        </StackPanel>
-                    </Button>
-
-                    <!-- Dashboard 视图:班组配置 + 主题切换 -->
-                    <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding IsOnDashboard, Converter={StaticResource BoolToVisibilityConverter}}">
-                        <Button Command="{Binding ShowSettingsCommand}"
-                                Style="{StaticResource Style.Button.Secondary}"
-                                Margin="0,0,8,0" Padding="12,7">
+                        <!-- ━━━━━━ ③ 操作按钮组 ━━━━━━ -->
+                        <!-- 登录态:班长身份 + 登出 -->
+                        <Border CornerRadius="6" Padding="10,4" Margin="0,0,8,0"
+                                Background="{DynamicResource Brush.Bg2}"
+                                Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}}">
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="⚙" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
-                                <TextBlock Text="班组配置" VerticalAlignment="Center" />
+                                <TextBlock VerticalAlignment="Center" FontSize="{StaticResource FontSize.Body}"
+                                           Foreground="{DynamicResource Brush.Text1}">
+                                    <Run Text="班长:" />
+                                    <Run Text="{Binding OperatorName, Mode=OneWay}"
+                                         FontWeight="Bold"
+                                         Foreground="{DynamicResource Brush.Brand}" />
+                                </TextBlock>
+                                <Button Command="{Binding LogoutCommand}"
+                                        Style="{StaticResource Style.Button.Secondary}"
+                                        Margin="10,0,0,0" Padding="8,4"
+                                        Content="登出"
+                                        ToolTip="结束当前班长会话" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 未登录态:登录按钮 -->
+                        <Button Command="{Binding LoginCommand}"
+                                Style="{StaticResource Style.Button.Secondary}"
+                                Margin="0,0,8,0" Padding="12,7"
+                                Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="🔑" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="班长登录" VerticalAlignment="Center" />
                             </StackPanel>
                         </Button>
-                        <Button Command="{Binding ToggleThemeCommand}"
-                                Style="{StaticResource Style.Button.Secondary}"
-                                Margin="0,0,16,0" Padding="12,7"
-                                ToolTip="深色 / 浅色 主题切换">
-                            <TextBlock Text="{Binding ThemeToggleIcon}"
-                                       FontSize="16" VerticalAlignment="Center" />
+
+                        <!-- 倒班切换:登录态可见 -->
+                        <Button Command="{Binding SwapShiftsCommand}"
+                                Style="{StaticResource Style.Button.Primary}"
+                                Margin="0,0,8,0" Padding="14,7"
+                                ToolTip="把白班 / 夜班两个槽位的班组归属对调"
+                                Visibility="{Binding IsAuthenticated, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="⇄" FontSize="16" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                <TextBlock Text="倒班切换" VerticalAlignment="Center" />
+                            </StackPanel>
                         </Button>
-                    </StackPanel>
-                    <!-- 非 Dashboard 视图:返回大屏 -->
-                    <Button Command="{Binding ShowDashboardCommand}"
-                            Style="{StaticResource Style.Button.Primary}"
-                            Margin="0,0,16,0" Padding="14,7"
-                            Visibility="{Binding IsOnDashboard, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="← " VerticalAlignment="Center" />
-                            <TextBlock Text="返回大屏" VerticalAlignment="Center" />
+
+                        <!-- Dashboard 视图:班组配置 + 主题切换 -->
+                        <StackPanel Orientation="Horizontal"
+                                    Visibility="{Binding IsOnDashboard, Converter={StaticResource BoolToVisibilityConverter}}">
+                            <Button Command="{Binding ShowSettingsCommand}"
+                                    Style="{StaticResource Style.Button.Secondary}"
+                                    Margin="0,0,8,0" Padding="12,7">
+                                <StackPanel Orientation="Horizontal">
+                                    <TextBlock Text="⚙" FontSize="14" Margin="0,0,6,0" VerticalAlignment="Center" />
+                                    <TextBlock Text="班组配置" VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Button>
+                            <Button Command="{Binding ToggleThemeCommand}"
+                                    Style="{StaticResource Style.Button.Secondary}"
+                                    Margin="0,0,16,0" Padding="12,7"
+                                    ToolTip="深色 / 浅色 主题切换">
+                                <TextBlock Text="{Binding ThemeToggleIcon}"
+                                           FontSize="16" VerticalAlignment="Center" />
+                            </Button>
                         </StackPanel>
-                    </Button>
+                        <!-- 非 Dashboard 视图:返回大屏 -->
+                        <Button Command="{Binding ShowDashboardCommand}"
+                                Style="{StaticResource Style.Button.Primary}"
+                                Margin="0,0,16,0" Padding="14,7"
+                                Visibility="{Binding IsOnDashboard, Converter={StaticResource BoolToVisibilityConverter}, ConverterParameter=Inverse}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="← " VerticalAlignment="Center" />
+                                <TextBlock Text="返回大屏" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
 
-                    <!-- ━━━━━━ ④ 日期 + 时间 ━━━━━━ -->
-                    <StackPanel>
-                        <TextBlock Text="{Binding DateText}"
-                                   Style="{StaticResource Text.Caption}"
-                                   HorizontalAlignment="Right" />
-                        <TextBlock Text="{Binding TimeText}"
-                                   FontSize="{StaticResource FontSize.H4}"
-                                   Foreground="{DynamicResource Brush.Text0}"
-                                   FontWeight="Medium"
-                                   HorizontalAlignment="Right"
-                                   Typography.NumeralAlignment="Tabular" />
+                        <!-- ━━━━━━ ④ 日期 + 时间 ━━━━━━ -->
+                        <StackPanel>
+                            <TextBlock Text="{Binding DateText}"
+                                       Style="{StaticResource Text.Caption}"
+                                       HorizontalAlignment="Right" />
+                            <TextBlock Text="{Binding TimeText}"
+                                       FontSize="{StaticResource FontSize.H4}"
+                                       Foreground="{DynamicResource Brush.Text0}"
+                                       FontWeight="Medium"
+                                       HorizontalAlignment="Right"
+                                       Typography.NumeralAlignment="Tabular" />
+                        </StackPanel>
                     </StackPanel>
-                </StackPanel>
-            </Grid>
-        </Border>
+                </Grid>
+            </Border>
 
-        <!-- ═══ 主内容区(Dashboard / ShiftConfig 切换) ═══ -->
-        <ContentControl Grid.Row="1" Margin="0,14,0,0"
-                        Content="{Binding CurrentView}" />
+            <!-- ═══ 主内容区(Dashboard / ShiftConfig 切换) ═══ -->
+            <ContentControl Grid.Row="1" Margin="0,14,0,0"
+                            Content="{Binding CurrentView}" />
 
-        <!-- ═══ 底部 hint (开发期可见,生产建议改成版本号或心跳) ═══ -->
-        <TextBlock Grid.Row="2" Style="{StaticResource Text.Caption}"
-                   Text="按 Esc 退出 (需密码)"
-                   HorizontalAlignment="Right" Margin="0,8,4,0"
-                   Opacity="0.4" />
+            <!-- ═══ 底部 hint (开发期可见,生产建议改成版本号或心跳) ═══ -->
+            <TextBlock Grid.Row="2" Style="{StaticResource Text.Caption}"
+                       Text="按 Esc 退出 (需密码)"
+                       HorizontalAlignment="Right" Margin="0,8,4,0"
+                       Opacity="0.4" />
 
-        <!--
-            Toast 通知覆盖层。Grid.RowSpan 跨整个网格,Panel.ZIndex 提升到所有内容之上,
-            自身右下角对齐,空白处 IsHitTestVisible=False,不挡操作员点其它控件。
-        -->
-        <ContentControl Grid.Row="0" Grid.RowSpan="3"
-                        Panel.ZIndex="1000"
-                        IsHitTestVisible="True"
-                        Content="{Binding ToastHost}" />
-    </Grid>
+            <!--
+                Toast 通知覆盖层。Grid.RowSpan 跨整个网格,Panel.ZIndex 提升到所有内容之上,
+                自身右下角对齐,空白处 IsHitTestVisible=False,不挡操作员点其它控件。
+            -->
+            <ContentControl Grid.Row="0" Grid.RowSpan="3"
+                            Panel.ZIndex="1000"
+                            IsHitTestVisible="True"
+                            Content="{Binding ToastHost}" />
+        </Grid>
+    </controls:DesignScaleDecorator>
 </Window>

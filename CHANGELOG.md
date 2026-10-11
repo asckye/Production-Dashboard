@@ -16,6 +16,9 @@ All notable changes to this project are documented here. The format is based on 
 - 看门狗读心跳文件的同时,主程序覆盖心跳偶尔会"拒绝访问"并记录告警 / Overwriting the heartbeat occasionally failed with "access denied" while the watchdog was reading it
 - 退出 / 登录密码框按一次回车会校验两次,输错一次被记为两次失败,更快触发锁定 / Pressing Enter once in the exit or login password box validated twice, so one wrong entry counted as two failures and triggered the lockout sooner
 - 密码框打开时鼠标仍会因空闲被隐藏 / The mouse cursor could be hidden by the idle timer while a password dialog was open
+- 窗口小于 1920×1080 时界面底部和顶栏右侧被截断;现在整个界面按 1920×1080 设计、随窗口等比缩放,2K / 4K 屏(系统缩放 100%)也会相应放大,不再字小、留白 / Below 1920×1080 the bottom of the dashboard and the right end of the top bar were cut off; the UI is now designed at 1920×1080 and scales proportionally with the window, and it scales up on 2K / 4K screens at 100% system scaling instead of leaving small text and empty space
+- 顶栏「当前班次」徽章和班次对比卡的高亮框绑定路径错误,夜班生效时颜色和高亮不切换 / The top-bar current-shift badge and the shift comparison card highlight had broken binding paths, so their color and highlight never switched when the night shift was active
+- 班组配置页滚动条为系统默认的浅灰色外观;现在随深色 / 浅色主题显示 / Scrollbars on the shift configuration page used the default light-gray Windows look; they now follow the dark / light theme
 
 ## [1.1.0] - 2026-10-11
 

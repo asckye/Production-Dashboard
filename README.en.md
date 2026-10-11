@@ -38,6 +38,7 @@ A general-purpose production statistics dashboard for discrete-manufacturing lin
 - **Automatic Excel export at end of shift**: each shift produces `Data/Exports/{year}/{date}_{shift}.xlsx`
 - **Yearly archiving**: at year rollover, the previous year is exported to `Data/Archives/{year}.xlsx` and purged from the main database
 - **Watchdog self-recovery**: a UI deadlock or crash is detected within 60 seconds, and the process is killed and restarted
+- **Fits any screen**: the UI is designed at 1920×1080 and scales proportionally with the window, so it displays in full from 1280×720 up to 4K
 - **Audit trail**: shift changes, PLC state changes and configuration changes are all written to the AuditLog table
 
 ---

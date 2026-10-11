@@ -18,7 +18,7 @@
         <Setter Property="VerticalAlignment" Value="Center" />
     </Style>
 
-    <!-- 班次徽章 - 默认 ShiftA 色;当 Dashboard.BIsActive=True 时切到 ShiftB -->
+    <!-- 班次徽章 - 默认 ShiftA 色;当 Dashboard.Hero.BIsActive=True 时切到 ShiftB -->
     <Style
         x:Key="Style.Badge.Shift"
         TargetType="Border"
@@ -30,7 +30,7 @@
         </Setter>
         <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftA}" />
         <Style.Triggers>
-            <DataTrigger Binding="{Binding Dashboard.BIsActive}" Value="True">
+            <DataTrigger Binding="{Binding Dashboard.Hero.BIsActive}" Value="True">
                 <Setter Property="Background">
                     <Setter.Value>
                         <SolidColorBrush Opacity="0.08" Color="{DynamicResource Color.ShiftB}" />

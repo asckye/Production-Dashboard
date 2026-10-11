@@ -137,7 +137,7 @@ flowchart LR
 ### 在大屏上新增一个统计数字
 1. 在 Core 的 `DashboardStatistics` 加字段,在 `ProductionStatisticsService` 里计算(需要新查询时,先在 `IProductionAnalyticsRepository` 加方法,再在 Infrastructure 的 `ProductionAnalyticsRepository` 实现)。
 2. 在 `AggregateMetricsPresenter` 加对应的界面属性,把数字格式化成文字。
-3. 在 XAML 中绑定该属性。
+3. 在 XAML 中绑定该属性。布局按 1920×1080 设计即可,主窗口的 `DesignScaleDecorator` 会按实际窗口大小等比缩放,不需要为其它分辨率单独适配。
 4. 为 Core 的计算逻辑补单元测试。
 
 ### 修改数据库结构

@@ -137,7 +137,7 @@ flowchart LR
 ### Add a number to the dashboard
 1. Add a field to Core's `DashboardStatistics` and compute it in `ProductionStatisticsService` (if it needs a new query, add a method to `IProductionAnalyticsRepository` first, then implement it in Infrastructure's `ProductionAnalyticsRepository`).
 2. Add a matching UI property to `AggregateMetricsPresenter` and format the number as text.
-3. Bind the property in XAML.
+3. Bind the property in XAML. Design the layout at 1920×1080; the main window's `DesignScaleDecorator` scales it proportionally to the actual window size, so other resolutions need no separate work.
 4. Add unit tests for the Core calculation.
 
 ### Change the database schema

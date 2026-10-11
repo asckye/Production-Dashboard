@@ -157,7 +157,7 @@
         <Setter Property="Background" Value="#04FFFFFF" />
         <Setter Property="Opacity" Value="0.75" />
         <Style.Triggers>
-            <DataTrigger Binding="{Binding AIsActive}" Value="True">
+            <DataTrigger Binding="{Binding Hero.AIsActive}" Value="True">
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftA}" />
                 <Setter Property="Background">
                     <Setter.Value>
@@ -188,7 +188,7 @@
         <Setter Property="Background" Value="#04FFFFFF" />
         <Setter Property="Opacity" Value="0.75" />
         <Style.Triggers>
-            <DataTrigger Binding="{Binding BIsActive}" Value="True">
+            <DataTrigger Binding="{Binding Hero.BIsActive}" Value="True">
                 <Setter Property="BorderBrush" Value="{DynamicResource Brush.ShiftB}" />
                 <Setter Property="Background">
                     <Setter.Value>
