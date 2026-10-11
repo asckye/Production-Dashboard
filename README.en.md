@@ -162,7 +162,7 @@ ProductionDashboard.slnx
 ├── tests/ProductionDashboard.Tests/          ← tests mirroring src, plus layering rule tests
 ├── tools/plc-sim/                            ← software PLC (local development / demos)
 ├── docs/                                     ← architecture guide, screenshots
-└── .github/                                  ← CI, issue / PR templates
+└── .github/                                  ← CI and release workflows, issue / PR templates
 ```
 
 **New to the codebase? Start with the [Architecture and Development Guidelines](docs/ARCHITECTURE.en.md)**: where things live, the data flow, coding rules, and step-by-step recipes for common changes (adding a setting, adding a dashboard number, changing the database, supporting another PLC).
@@ -237,6 +237,10 @@ All **202 tests pass**. Main coverage:
 ---
 
 ## Build and deployment
+
+### Download
+
+The [Releases](https://github.com/asckye/Production-Dashboard/releases) page provides a win-x64 single-file package, built automatically by GitHub Actions when a release is published. Unzip it, edit `appsettings.json` for the site (PLC IP, factory name, passwords), and double-click `ProductionDashboard.exe`. No .NET installation is needed.
 
 ### Development build
 

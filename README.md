@@ -160,7 +160,7 @@ ProductionDashboard.slnx
 ├── tests/ProductionDashboard.Tests/          ← 测试,目录与 src 一一对应 + 分层规则测试
 ├── tools/plc-sim/                            ← 软件 PLC(本地开发 / 演示用)
 ├── docs/                                     ← 架构文档、截图
-└── .github/                                  ← CI、Issue / PR 模板
+└── .github/                                  ← CI 与发布工作流、Issue / PR 模板
 ```
 
 **第一次参与开发?请先读 [架构与开发规范](docs/ARCHITECTURE.md)**:目录速查、数据流、编码规则,以及「新增配置 / 新增统计数字 / 修改数据库 / 接入其它 PLC」等常见改动的步骤。
@@ -235,6 +235,10 @@ dotnet test
 ---
 
 ## 构建与部署
+
+### 直接下载
+
+[Releases](https://github.com/asckye/Production-Dashboard/releases) 页面提供 win-x64 单文件压缩包(发布时由 GitHub Actions 自动构建)。解压后按现场修改 `appsettings.json`(PLC IP、工厂名、口令),双击 `ProductionDashboard.exe` 即可运行,无需安装 .NET。
 
 ### 开发构建
 

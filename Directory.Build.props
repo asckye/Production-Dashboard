@@ -12,6 +12,8 @@
 
     <!-- Common compile -->
     <Deterministic>true</Deterministic>
+    <!-- 调试符号嵌入程序集:异常日志带行号,发布目录里也不会多出零散的 .pdb 文件 -->
+    <DebugType>embedded</DebugType>
     <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
 
     <!-- Source meta -->

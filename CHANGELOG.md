@@ -22,3 +22,5 @@ All notable changes to this project are documented here. The format is based on 
 - 架构与开发规范、贡献指南、行为准则、安全策略、Issue 与 PR 模板 / Architecture guidelines, contributing guide, code of conduct, security policy, issue and PR templates
 - GitHub Actions CI:Windows 上构建并运行测试 / GitHub Actions CI that builds and tests on Windows
 - `tools/plc-sim`:无需硬件的软件 S7 PLC,用于本地开发与演示 / `tools/plc-sim`: a software S7 PLC for local development and demos, no hardware needed
+
+[1.1.0]: https://github.com/asckye/Production-Dashboard/releases/tag/v1.1.0
